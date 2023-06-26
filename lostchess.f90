@@ -62,10 +62,10 @@ program lostchess
   integer,parameter::g8 = 118
   integer,parameter::h8 = 119
   !castling permissions
-  integer,parameter::cp_wq = 1
-  integer,parameter::cp_wk = 2
-  integer,parameter::cp_bq = 4
-  integer,parameter::cp_bk = 8
+  integer,parameter::cp_wq = 2
+  integer,parameter::cp_wk = 1
+  integer,parameter::cp_bq = 8
+  integer,parameter::cp_bk = 4
   integer,parameter::cp_all = cp_wq+cp_wk+cp_bq+cp_bk
   integer,parameter,dimension(0:127)::cp_table = (/ &
   & cp_all-cp_wq,0,0,0,cp_all-cp_wq-cp_wk,0,0,cp_all-cp_wk,0,0,0,0,0,0,0,0, &
@@ -82,7 +82,7 @@ program lostchess
   integer,dimension(0:7),parameter::directions_rook_bishop = (/  1, 16, -1,-16, 15, 17,-15,-17/)
   integer,dimension(0:7),parameter::directions_knight      = (/ 14, 18, 31, 33,-14,-18,-31,-33/)
   
-  character(len=2),parameter,dimension(0:127)::raw2algebraic = (/ &
+  character(len=2),parameter,dimension(-1:127)::raw2algebraic = (/ '- ', & 
   &'a1','a2','a3','a4','a5','a6','a7','a8','ob','ob','ob','ob','ob','ob','ob','ob', &
   &'b1','b2','b3','b4','b5','b6','b7','b8','ob','ob','ob','ob','ob','ob','ob','ob', &
   &'c1','c2','c3','c4','c5','c6','c7','c8','ob','ob','ob','ob','ob','ob','ob','ob', &
@@ -129,7 +129,7 @@ program lostchess
     write(*,*) 'select options -----------------------------------------------------------------'
     write(*,*) '1 write board numbers | 2 test_common_moves | 3 test_gen_moves_nopawns'
     write(*,*) '4 test_do_undo_nopawns | 5 test_do_undo_wp | 6 test_do_undo_bp '
-    write(*,*) '7 perft'
+    write(*,*) '7 perft | 8 test set_fen'
     write(*,*) '--------------------------------------------------------------------------------'
     read*, selected_option
     select case (selected_option)
@@ -157,6 +157,8 @@ program lostchess
         call restart_game()
         write(*,*) 'perft 5 ',perft(5),'/ 4865609' 
         call write_board_raw()
+      case (8)
+        call test_set_fen()
      case default
         exit
     end select
@@ -668,6 +670,118 @@ program lostchess
     end do
   end function
   
+  function get_fen()
+    character(len=9*8+2+5+3+3+4)::get_fen
+    integer::emptys,tile
+    character(len=1),dimension(1:12):: fen_piece = (/'P','N','B','R','Q','K','p','n','b','r','q','k'/)
+    character(len=1),dimension(0:8):: fen_sq = (/ ' ','1','2','3','4','5','6','7','8' /)
+    character(len=3),dimension(0:1):: fen_side = (/ ' w ',' b '/)
+    character(len=4),dimension(0:15):: int2fen_cp = (/ &
+    &'    ','K   ',' Q  ','KQ  ','  k ','K k ',' Qk ','KQk ','   q','K  q',' Q q','KQ q','  kq','K kq',' Qkq','KQkq' /)
+    get_fen = ''
+    !fen board
+    emptys = 0
+    do tile=0,119
+      if(iand(tile,136) == 0)then
+        if(board(tile) == empty)then
+          emptys = emptys + 1
+        else
+          get_fen = trim(get_fen)//trim(fen_sq(emptys))//fen_piece(board(tile))
+        end if
+      end if
+      if(iand(tile,8) /= 0 .and. iand(tile,7) == 0)then
+          get_fen = trim(get_fen)//trim(fen_sq(emptys))//'/'
+          emptys = 0
+      end if
+    end do
+    get_fen = trim(get_fen)//trim(fen_sq(emptys))
+    !fen side,castling,enpassant,50move,ply
+    get_fen = trim(get_fen)//fen_side(side_to_move)//trim(int2fen_cp(castling_permissions))//raw2algebraic(enpassant)
+    ! get_fen = trim(get_fen)//ply
+  end function
+  
+  subroutine set_fen(fen_in) 
+    character(*)::fen_in
+    character(len=90)::fen
+    character(len=72)::fen_board,fen_board_expanded
+    character(len=8),dimension(0:7)::fen_row
+    character(len=8)::fen_row_r
+    character(len=6)::fen_side,fen_cp,fen_ep
+    character(len=8),dimension(1:8)::fen_empty = &
+    & (/'-       ','--      ','---     ','----    ','-----   ','------  ','------- ','--------'/)
+    character(len=1),dimension(0:8):: int2char = (/ ' ','1','2','3','4','5','6','7','8' /)
+    character(len=1),dimension(0:12)::pie = (/'-','P','N','B','R','Q','K','p','n','b','r','q','k'/)
+    character(len=4),dimension(0:15):: int2fen_cp = (/ &
+    &'    ','K   ','Q   ','KQ  ','k   ','Kk  ','Qk  ','KQk ','q   ','Kq  ','Qq  ','KQq ','kq  ','Kkq ','Qkq ','KQkq' /)
+    integer::row_ind,col_ind,pie_ind,fen_board_ind,tile,emptys,fen_cp_ind
+    logical::is_empty
+    
+    fen = trim(fen_in)
+    
+    !parse fen
+    fen_board = fen(1:index(fen,' '))
+    fen = fen(index(fen,' ')+1:90)
+    fen_side = fen(1:index(fen,' '))
+    fen = fen(index(fen,' ')+1:90)
+    fen_cp = fen(1:index(fen,' '))
+    fen = fen(index(fen,' ')+1:90)
+    fen_ep = fen(1:index(fen,' '))
+    fen = fen(index(fen,' ')+1:90)
+      
+    !expand fen_board
+    fen_board_expanded = ''
+    do fen_board_ind = 1,90
+      is_empty = .false.
+      do emptys = 1,8
+        if(fen_board(fen_board_ind:fen_board_ind) == int2char(emptys))then
+          is_empty = .true.
+          fen_board_expanded = trim(fen_board_expanded)//fen_empty(emptys)
+          exit
+        end if
+      end do
+      if(.not. is_empty)then
+        fen_board_expanded = trim(fen_board_expanded)//fen_board(fen_board_ind:fen_board_ind)
+      end if
+    end do
+    ! write(*,*)fen_board_expanded
+   
+    !parse fen_board_expanded into fen_row
+    do row_ind=0,6
+      fen_row(row_ind) = fen_board_expanded(1:index(fen_board_expanded,'/')-1)
+      fen_board_expanded = fen_board_expanded(index(fen_board_expanded,'/')+1:90)
+      ! write(*,*) fen_row(row_ind)
+    end do
+    fen_row(7) = fen_board_expanded
+    ! write(*,*) fen_row(7)
+    
+    !read fen_row to set board
+    do row_ind = 0,7
+      fen_row_r = fen_row(row_ind)
+      do col_ind = 0,7
+        tile = 16*row_ind+col_ind
+        do pie_ind = 0,12
+          if(pie(pie_ind) == fen_row_r(col_ind+1:col_ind+1))then
+            ! write(*,*) tile,pie_ind
+            board(tile) = pie_ind
+          end if
+        end do
+      end do
+    end do
+    
+    !side cp and ep
+    if(fen_side == 'w') side_to_move=team_white
+    if(fen_side == 'b') side_to_move=team_black
+    
+    do castling_permissions = 0,15
+      if(fen_cp == int2fen_cp(castling_permissions)) exit
+    end do
+    
+    do enpassant = -1,127
+      if(fen_ep == raw2algebraic(enpassant)) exit
+    end do
+    
+  end subroutine
+  
 !TESTS -------------------------------------------------------------------------  
   subroutine test_common_moves()
     integer::ini
@@ -759,7 +873,64 @@ program lostchess
     end do
     call write_board_raw
   end subroutine
-    
+  
+  subroutine test_set_fen()
+  integer,dimension(0:127)::cp_board
+  integer::cp_side_to_move,cp_castling_permissions,cp_enpassant
+  !set manually
+  side_to_move = team_white
+  castling_permissions = cp_all
+  enpassant = ob
+  board = empty
+  board(a1:h1) = (/wr,wn,wb,wq,wk,wb,wn,wr/)
+  board(a2:h2) = wp
+  board(a7:h7) = bp
+  board(a8:h8) = (/br,bn,bb,bq,bk,bb,bn,br /)
+  !copy
+  cp_side_to_move = side_to_move
+  cp_castling_permissions = castling_permissions
+  cp_enpassant = enpassant
+  cp_board = board
+  !set fen and compare
+  call set_fen('RNBQKBNR/PPPPPPPP/8/8/8/8/pppppppp/rnbqkbnr w KQkq - 0')
+  if(cp_side_to_move == side_to_move .and. &
+  & cp_castling_permissions == castling_permissions .and. &
+  & cp_enpassant == enpassant .and. &
+  & ALL( cp_board == board ))then
+    write(*,*) 'PASS ','fen starting position'
+  else
+    write(*,*) 'NO PASS ','fen starting position'
+    call write_board_raw()
+  end if
+  
+  !set manually
+  side_to_move = team_black
+  castling_permissions = cp_all-cp_bk-cp_bq
+  enpassant = 32
+  board = empty
+  board(a1:h1) = (/wr,wn,wb,wq,wk,wb,wn,wr/)
+  board(a2:h2) = wp
+  board(a7:h7) = bp
+  board(a8:h8) = (/br,bn,bb,bq,bk,bb,bn,br /)
+  !copy
+  cp_side_to_move = side_to_move
+  cp_castling_permissions = castling_permissions
+  cp_enpassant = enpassant
+  cp_board = board
+  !set fen and compare
+  call set_fen('RNBQKBNR/PPPPPPPP/8/8/8/8/pppppppp/rnbqkbnr b KQ c1 0')
+  if(cp_side_to_move == side_to_move .and. &
+  & cp_castling_permissions == castling_permissions .and. &
+  & cp_enpassant == enpassant .and. &
+  & ALL( cp_board == board ))then
+    write(*,*) 'PASS ','fen starting position b KQ c1'
+  else
+    write(*,*) 'NO PASS ','fen starting position b KQ c1'
+    call write_board_raw()
+  end if
+  
+  end subroutine
+  
   recursive function perft(depth) result(res)
     integer::res
     integer::depth,cnt,m_ind
