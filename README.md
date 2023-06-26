@@ -24,7 +24,7 @@ Or download the lostchess.exe for 64bits Windows
 ### Utilities and I/O
 * ✔ board writer
 * ✔ moves writer
-* fen parser
+* ✔ fen parser
 ### Search engine
 * static analyzer
 * min-max
