@@ -68,14 +68,14 @@ program lostchess
   integer,parameter::cp_bk = 4
   integer,parameter::cp_all = cp_wq+cp_wk+cp_bq+cp_bk
   integer,parameter,dimension(0:127)::cp_table = (/ &
-  & cp_all-cp_wq,0,0,0,cp_all-cp_wq-cp_wk,0,0,cp_all-cp_wk,0,0,0,0,0,0,0,0, &
-  & 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, &
-  & 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, &
-  & 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, &
-  & 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, &
-  & 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, &
-  & 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, &
-  & cp_all-cp_bq,0,0,0,cp_all-cp_bq-cp_bk,0,0,cp_all-cp_bk,0,0,0,0,0,0,0,0 /)
+  & cp_all-cp_wq,cp_all,cp_all,cp_all,cp_all-cp_wq-cp_wk,cp_all,cp_all,cp_all-cp_wk,0,0,0,0,0,0,0,0, &
+  & cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,0,0,0,0,0,0,0,0, &
+  & cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,0,0,0,0,0,0,0,0, &
+  & cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,0,0,0,0,0,0,0,0, &
+  & cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,0,0,0,0,0,0,0,0, &
+  & cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,0,0,0,0,0,0,0,0, &
+  & cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,0,0,0,0,0,0,0,0, &
+  & cp_all-cp_bq,cp_all,cp_all,cp_all,cp_all-cp_bq-cp_bk,cp_all,cp_all,cp_all-cp_bk,0,0,0,0,0,0,0,0 /)
   !piece directions
   integer,dimension(0:7),parameter::directions_rook        = (/  1, 16, -1,-16,  0,  0,  0,  0/)
   integer,dimension(0:7),parameter::directions_bishop      = (/ 15, 17,-15,-17,  0,  0,  0,  0/)
@@ -83,14 +83,14 @@ program lostchess
   integer,dimension(0:7),parameter::directions_knight      = (/ 14, 18, 31, 33,-14,-18,-31,-33/)
   
   character(len=2),parameter,dimension(-1:127)::raw2algebraic = (/ '- ', & 
-  &'a1','a2','a3','a4','a5','a6','a7','a8','ob','ob','ob','ob','ob','ob','ob','ob', &
-  &'b1','b2','b3','b4','b5','b6','b7','b8','ob','ob','ob','ob','ob','ob','ob','ob', &
-  &'c1','c2','c3','c4','c5','c6','c7','c8','ob','ob','ob','ob','ob','ob','ob','ob', &
-  &'d1','d2','d3','d4','d5','d6','d7','d8','ob','ob','ob','ob','ob','ob','ob','ob', &
-  &'e1','e2','e3','e4','e5','e6','e7','e8','ob','ob','ob','ob','ob','ob','ob','ob', &
-  &'f1','f2','f3','f4','f5','f6','f7','f8','ob','ob','ob','ob','ob','ob','ob','ob', &
-  &'g1','g2','g3','g4','g5','g6','g7','g8','ob','ob','ob','ob','ob','ob','ob','ob', &
-  &'h1','h2','h3','h4','h5','h6','h7','h8','ob','ob','ob','ob','ob','ob','ob','ob' /)
+  &'a1','b1','c1','d1','e1','f1','g1','h1','ob','ob','ob','ob','ob','ob','ob','ob', &
+  &'a2','b2','c2','d2','e2','f2','g2','h2','ob','ob','ob','ob','ob','ob','ob','ob', &
+  &'a3','b3','c3','d3','e3','f3','g3','h3','ob','ob','ob','ob','ob','ob','ob','ob', &
+  &'a4','b4','c4','d4','e4','f4','g4','h4','ob','ob','ob','ob','ob','ob','ob','ob', &
+  &'a5','b5','c5','d5','e5','f5','g5','h5','ob','ob','ob','ob','ob','ob','ob','ob', &
+  &'a6','b6','c6','d6','e6','f6','g6','h6','ob','ob','ob','ob','ob','ob','ob','ob', &
+  &'a7','b7','c7','d7','e7','f7','g7','h7','ob','ob','ob','ob','ob','ob','ob','ob', &
+  &'a8','b8','c8','d8','e8','f8','g8','h8','ob','ob','ob','ob','ob','ob','ob','ob' /)
   
   type move
     integer::ini
@@ -111,6 +111,9 @@ program lostchess
   integer::castling_permissions
   integer::enpassant
   integer::state_hash
+  
+  !history
+  integer,dimension(0:max_moves_per_game-1)::cp_hist,ep_hist,hash_hist
 
   !moves list
   integer::ply
@@ -120,6 +123,7 @@ program lostchess
   
   !testing variables
   integer::selected_option
+  integer::cnt_perft_capture,cnt_perft_ep,cnt_perft_castle,cnt_perft_promo
     
   !init program
   call init()
@@ -146,17 +150,7 @@ program lostchess
       case (6)
         call test_do_undo_bp
       case (7)
-        call restart_game()
-        write(*,*) 'perft 1 ',perft(1),'/      20'
-        call restart_game()
-        write(*,*) 'perft 2 ',perft(2),'/     400'
-        call restart_game()
-        write(*,*) 'perft 3 ',perft(3),'/    8902'
-        call restart_game()
-        write(*,*) 'perft 4 ',perft(4),'/  197281'
-        call restart_game()
-        write(*,*) 'perft 5 ',perft(5),'/ 4865609' 
-        call write_board_raw()
+        call perft_handler()
       case (8)
         call test_set_fen()
      case default
@@ -172,22 +166,28 @@ program lostchess
 
   subroutine restart_game()
     call set_initial_posion()
-    side_to_move = team_white
-    castling_permissions = cp_all
-    enpassant = ob
     state_hash = hash_state()
-    ply = 0
-    moves_hist = move_null
-    moves_ind = 0
-    moves = move_null 
+    cp_hist = cp_all
+    ep_hist = ob
+    call restart_move_list()
   end subroutine
   
   subroutine set_initial_posion()
+    side_to_move = team_white
+    castling_permissions = cp_all
+    enpassant = ob
     board = empty
     board(a1:h1) = (/wr,wn,wb,wq,wk,wb,wn,wr/)
     board(a2:h2) = wp
     board(a7:h7) = bp
     board(a8:h8) = (/br,bn,bb,bq,bk,bb,bn,br /)
+  end subroutine
+  
+  subroutine restart_move_list()
+    ply = 0
+    moves_hist = move_null
+    moves_ind = 0
+    moves = move_null 
   end subroutine
   
   function hash_state()
@@ -305,29 +305,33 @@ program lostchess
   subroutine gen_castling_moves()
     if(side_to_move == team_white .and. board(e1)==wk)then
       if(iand(castling_permissions,cp_wq) /= 0)then
-        if(board(e1)==empty .and. board(d1)==empty .and. &
-        & .not. is_attacked(e1,team_black) .and. .not. is_attacked(d1,team_black))then
-          call add_move(e1,c1,.FALSE.,empty,.FALSE.,.FALSE.,.TRUE.,empty)
+        if(board(b1)==empty .and. board(c1)==empty .and. board(d1)==empty) then
+          if( .not. is_attacked(e1,team_black) .and. .not. is_attacked(d1,team_black))then
+            call add_move(e1,c1,.FALSE.,empty,.FALSE.,.FALSE.,.TRUE.,empty)
+          end if
         endif
       end if
       if(iand(castling_permissions,cp_wk) /= 0)then
-        if(board(e1)==empty .and. board(f1)==empty .and. &
-        & .not. is_attacked(e1,team_black) .and. .not. is_attacked(f1,team_black))then
-          call add_move(e1,g1,.FALSE.,empty,.FALSE.,.FALSE.,.TRUE.,empty)
+        if(board(g1)==empty .and. board(f1)==empty) then
+          if( .not. is_attacked(e1,team_black) .and. .not. is_attacked(f1,team_black))then
+            call add_move(e1,g1,.FALSE.,empty,.FALSE.,.FALSE.,.TRUE.,empty)
+          end if
         endif
       end if
     end if
     if(side_to_move == team_black .and. board(e8)==bk)then
       if(iand(castling_permissions,cp_bq) /= 0)then
-        if(board(e8)==empty .and. board(d8)==empty .and. &
-        & .not. is_attacked(e8,team_white) .and. .not. is_attacked(d8,team_white))then
-          call add_move(e8,c8,.FALSE.,empty,.FALSE.,.FALSE.,.TRUE.,empty)
+        if(board(b8)==empty .and. board(c8)==empty .and. board(d8)==empty) then 
+          if( .not. is_attacked(e8,team_white) .and. .not. is_attacked(d8,team_white))then
+            call add_move(e8,c8,.FALSE.,empty,.FALSE.,.FALSE.,.TRUE.,empty)
+          end if
         endif
       end if
       if(iand(castling_permissions,cp_bk) /= 0)then
-        if(board(e8)==empty .and. board(f8)==empty .and. &
-        & .not. is_attacked(e8,team_white) .and. .not. is_attacked(f8,team_white))then
-          call add_move(e8,g8,.FALSE.,empty,.FALSE.,.FALSE.,.TRUE.,empty)
+        if(board(g8)==empty .and. board(f8)==empty) then
+          if( .not. is_attacked(e8,team_white) .and. .not. is_attacked(f8,team_white))then
+            call add_move(e8,g8,.FALSE.,empty,.FALSE.,.FALSE.,.TRUE.,empty)
+          end if
         endif
       end if
     end if
@@ -405,6 +409,9 @@ program lostchess
   subroutine make_move(m)
     type(move)::m
     
+    cp_hist(ply) = castling_permissions
+    ep_hist(ply) = enpassant
+    
     castling_permissions = iand(castling_permissions,cp_table(m%ini))
     castling_permissions = iand(castling_permissions,cp_table(m%fin))
     board(m%fin) = board(m%ini)
@@ -462,6 +469,8 @@ program lostchess
     type(move)::m
     ply = ply-1
     m = moves_hist(ply)
+    castling_permissions = cp_hist(ply)
+    enpassant = ep_hist(ply)
     ! write(*,*)'undo',m
     side_to_move = ieor(side_to_move,1)
     
@@ -506,19 +515,7 @@ program lostchess
       board(m%fin+16) = wp
     end if
   end if
-  
-  enpassant = ob
-  if(ply>0)then
-    if(moves_hist(ply-1)%is_pawnstart)then
-      if(ieor(side_to_move,1) == team_white)then
-        enpassant = moves_hist(ply-1)%ini+16
-      end if
-      if(ieor(side_to_move,1) == team_black)then
-        enpassant = moves_hist(ply-1)%ini-16
-      end if
-    end if
-  end if
-  
+
   end subroutine
   
   function is_attacked(tile,attacking_side)
@@ -756,7 +753,7 @@ program lostchess
     
     !read fen_row to set board
     do row_ind = 0,7
-      fen_row_r = fen_row(row_ind)
+      fen_row_r = fen_row(7-row_ind)
       do col_ind = 0,7
         tile = 16*row_ind+col_ind
         do pie_ind = 0,12
@@ -892,7 +889,7 @@ program lostchess
   cp_enpassant = enpassant
   cp_board = board
   !set fen and compare
-  call set_fen('RNBQKBNR/PPPPPPPP/8/8/8/8/pppppppp/rnbqkbnr w KQkq - 0')
+  call set_fen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 ')
   if(cp_side_to_move == side_to_move .and. &
   & cp_castling_permissions == castling_permissions .and. &
   & cp_enpassant == enpassant .and. &
@@ -918,7 +915,7 @@ program lostchess
   cp_enpassant = enpassant
   cp_board = board
   !set fen and compare
-  call set_fen('RNBQKBNR/PPPPPPPP/8/8/8/8/pppppppp/rnbqkbnr b KQ c1 0')
+  call set_fen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQ a3 0')
   if(cp_side_to_move == side_to_move .and. &
   & cp_castling_permissions == castling_permissions .and. &
   & cp_enpassant == enpassant .and. &
@@ -934,10 +931,16 @@ program lostchess
   recursive function perft(depth) result(res)
     integer::res
     integer::depth,cnt,m_ind
+    type(move)::m
 
     cnt = 0
     if(depth == 0) then
       res = 1
+      ! m=moves_hist(ply-1)
+      ! if(m%is_capture) cnt_perft_capture = cnt_perft_capture + 1
+      ! if(m%is_castling) cnt_perft_castle = cnt_perft_castle + 1
+      ! if(m%is_enpassant) cnt_perft_ep = cnt_perft_ep + 1
+      ! if(m%promotion_pie /= empty) cnt_perft_promo = cnt_perft_promo + 1
       return
     end if
 
@@ -949,5 +952,59 @@ program lostchess
     end do
     res = cnt
   end function
+  
+  subroutine perft_restart()
+    cnt_perft_capture = 0
+    cnt_perft_ep = 0
+    cnt_perft_castle = 0
+    cnt_perft_promo = 0
+  end subroutine
+  
+  subroutine perft_handler
+    integer::depth
+    integer,dimension(1:5)::perft_starting_nodes = (/ 20,400,8902,197281,4865609 /)
+    integer,dimension(1:5)::perft_kiwipete_nodes = (/ 48,2039,97862,4085603,193690690 /)
+    integer,dimension(1:6)::perft_position3_nodes = (/ 14,191,2812,43238,674624,11030083 /)
+    integer,dimension(1:5)::perft_position4_nodes = (/ 6,264,9467,422333,15833292 /)
+    integer,dimension(1:5)::perft_position5_nodes = (/ 44,1486,62379,2103487,89941194 /)
+
+    write(*,*) 'perft starting position'
+    call set_fen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0')     
+    do depth = 1,5
+      call restart_move_list()
+      call perft_restart()
+      write(*,*) perft(depth),perft_starting_nodes(depth)
+    end do        
+        
+    write(*,*) 'perft kiwipete'
+    call set_fen('r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0')
+    do depth = 1,4
+      call restart_move_list()
+      call perft_restart()
+      write(*,*) perft(depth),perft_kiwipete_nodes(depth)
+    end do 
+    
+    write(*,*) 'perft position3'
+    call set_fen('8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - 0')      
+    do depth = 1,5
+      call restart_move_list()
+      write(*,*) perft(depth),perft_position3_nodes(depth)
+    end do 
+    
+    write(*,*) 'perft position4'
+    call set_fen('r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0')      
+    do depth = 1,5
+      call restart_move_list()
+      write(*,*) perft(depth),perft_position4_nodes(depth)
+    end do 
+      
+    write(*,*) 'perft position5'
+    call set_fen('rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 0')      
+    do depth = 1,4
+      call restart_move_list()
+      write(*,*) perft(depth),perft_position5_nodes(depth)
+    end do 
+        
+  end subroutine
   
   end program lostchess
