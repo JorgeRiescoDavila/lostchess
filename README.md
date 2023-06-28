@@ -17,10 +17,11 @@ Or download the lostchess.exe for 64bits Windows
 * ✔ move maker
 * ✔ move unmaker
 * ✔ attacked square
-* hash position 
+* ✔ hash position 
 ### Tests
 * ✔ unit tests
 * ✔ perft
+* test hash
 ### Utilities and I/O
 * ✔ board writer
 * ✔ moves writer
