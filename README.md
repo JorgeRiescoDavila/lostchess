@@ -32,7 +32,7 @@ Or download the lostchess.exe for 64bits Windows
 * get principal line
 * alpha-beta
 * sorted alpha-beta and killers
-* search handler
+* ✔ search handler
 * extensions
 * transposition tables
 ### API
