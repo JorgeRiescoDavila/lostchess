@@ -151,6 +151,13 @@ program lostchess
   end type
   type(type_perft)::perft_results
   
+  !search engine
+  type type_search_const
+    integer,dimension(0:12,0:127)::piece_sq
+    integer,dimension(0:12)::piece_value
+  end type
+  type(type_search_const)::search_const1
+
   !testing variables
   integer::selected_option
   
@@ -162,7 +169,7 @@ program lostchess
     write(*,*) 'select options -----------------------------------------------------------------'
     write(*,*) '1 write board numbers | 2 test_common_moves | 3 test_gen_moves_nopawns'
     write(*,*) '4 test_do_undo_nopawns | 5 test_do_undo_wp | 6 test_do_undo_bp '
-    write(*,*) '7 perft | 8 test set_fen'
+    write(*,*) '7 perft | 8 test set_fen | 9 play'
     write(*,*) '--------------------------------------------------------------------------------'
     read*, selected_option
     select case (selected_option)
@@ -182,6 +189,10 @@ program lostchess
         call perft_handler()
       case (8)
         call test_set_fen()
+      case (9)
+        do while(.true.)
+          call ask_player()
+        end do
      case default
         exit
     end select
@@ -189,8 +200,41 @@ program lostchess
   
   contains
   
+  subroutine mirror(board)
+    integer,dimension(0:127)::board
+    integer,dimension(0:15)::aux_row
+    aux_row = board(0:15)
+    board(0:15) = board(112:127)
+    board(112:127) = aux_row
+    
+    aux_row = board(16:31)
+    board(16:31) = board(96:111)
+    board(96:111) = aux_row
+    
+    aux_row = board(32:47)
+    board(32:47) = board(80:95)
+    board(80:95) = aux_row
+    
+    aux_row = board(48:63)
+    board(48:63) = board(64:79)
+    board(64:79) = aux_row
+  end subroutine
+  
+  subroutine ask_player()
+    integer::m_ind = -1
+    call write_board_raw()
+    call gen_moves()
+    call write_moves()
+    write(*,*) 'write move index'
+    do while(.not.(moves_list_ind(ply) <= m_ind .and. m_ind <= moves_list_ind(ply+1)-1))
+      read*, m_ind
+    end do
+    call make_move(moves_list(m_ind))
+  end subroutine
+  
   subroutine init()
     call init_hash_table()
+    call init_search_const()
   end subroutine
 
   subroutine init_hash_table()
@@ -204,6 +248,76 @@ program lostchess
     hash_table%ep = floor(abs(sin(1665+1.)*2**30))
     do ind = 0,15
       hash_table%cp(ind) = floor(abs(sin(ind+1666+1.)*2**30))
+    end do
+  end subroutine
+
+  subroutine init_search_const()
+    integer::p_ind
+    search_const1%piece_value = (/ 0,100,310,320,500,950,100000,100,310,320,500,950,100000 /)
+  
+    search_const1%piece_sq(bp,0:127) = (/ & 
+      &  0,  0,  0,  0,  0,  0,  0,  0, 0,0,0,0,0,0,0,0, &
+      & 50, 50, 50, 50, 50, 50, 50, 50, 0,0,0,0,0,0,0,0, &
+      & 10, 10, 20, 30, 30, 20, 10, 10, 0,0,0,0,0,0,0,0, &
+      &  5,  5, 10, 25, 25, 10,  5,  5, 0,0,0,0,0,0,0,0, &
+      &  0,  0,  0, 20, 20,  0,  0,  0, 0,0,0,0,0,0,0,0, &
+      &  5, -5,-10,  0,  0,-10, -5,  5, 0,0,0,0,0,0,0,0, &
+      &  5, 10, 10,-20,-20, 10, 10,  5, 0,0,0,0,0,0,0,0, &
+      &  0,  0,  0,  0,  0,  0,  0,  0, 0,0,0,0,0,0,0,0 /)
+      
+    search_const1%piece_sq(bn,0:127) = (/ & 
+      & -50,-40,-30,-30,-30,-30,-40,-50, 0,0,0,0,0,0,0,0, &
+      & -40,-20,  0,  0,  0,  0,-20,-40, 0,0,0,0,0,0,0,0, &
+      & -30,  0, 10, 15, 15, 10,  0,-30, 0,0,0,0,0,0,0,0, &
+      & -30,  5, 15, 20, 20, 15,  5,-30, 0,0,0,0,0,0,0,0, &
+      & -30,  0, 15, 20, 20, 15,  0,-30, 0,0,0,0,0,0,0,0, &
+      & -30,  5, 10, 15, 15, 10,  5,-30, 0,0,0,0,0,0,0,0, &
+      & -40,-20,  0,  5,  5,  0,-20,-40, 0,0,0,0,0,0,0,0, &
+      & -50,-40,-30,-30,-30,-30,-40,-50, 0,0,0,0,0,0,0,0 /)
+      
+    search_const1%piece_sq(bb,0:127) = (/ & 
+      &  -20,-10,-10,-10,-10,-10,-10,-20, 0,0,0,0,0,0,0,0, &
+      &  -10,  0,  0,  0,  0,  0,  0,-10, 0,0,0,0,0,0,0,0, &
+      &  -10,  0,  5, 10, 10,  5,  0,-10, 0,0,0,0,0,0,0,0, &
+      &  -10,  5,  5, 10, 10,  5,  5,-10, 0,0,0,0,0,0,0,0, &
+      &  -10,  0, 10, 10, 10, 10,  0,-10, 0,0,0,0,0,0,0,0, &
+      &  -10, 10, 10, 10, 10, 10, 10,-10, 0,0,0,0,0,0,0,0, &
+      &  -10,  5,  0,  0,  0,  0,  5,-10, 0,0,0,0,0,0,0,0, &
+      &  -20,-10,-10,-10,-10,-10,-10,-20, 0,0,0,0,0,0,0,0 /)
+
+    search_const1%piece_sq(br,0:127) = (/ & 
+      &  0,  0,  0,  0,  0,  0,  0,  0, 0,0,0,0,0,0,0,0, &
+      &  5, 10, 10, 10, 10, 10, 10,  5, 0,0,0,0,0,0,0,0, &
+      & -5,  0,  0,  0,  0,  0,  0, -5, 0,0,0,0,0,0,0,0, &
+      & -5,  0,  0,  0,  0,  0,  0, -5, 0,0,0,0,0,0,0,0, &
+      & -5,  0,  0,  0,  0,  0,  0, -5, 0,0,0,0,0,0,0,0, &
+      & -5,  0,  0,  0,  0,  0,  0, -5, 0,0,0,0,0,0,0,0, &
+      & -5,  0,  0,  0,  0,  0,  0, -5, 0,0,0,0,0,0,0,0, &
+      &  0,  0,  0,  5,  5,  0,  0,  0,  0,0,0,0,0,0,0,0 /)
+      
+    search_const1%piece_sq(bq,0:127) = (/ & 
+      &  -20,-10,-10, -5, -5,-10,-10,-20, 0,0,0,0,0,0,0,0, &
+      &  -10,  0,  0,  0,  0,  0,  0,-10, 0,0,0,0,0,0,0,0, &
+      &  -10,  0,  5,  5,  5,  5,  0,-10, 0,0,0,0,0,0,0,0, &
+      &   -5,  0,  5,  5,  5,  5,  0, -5, 0,0,0,0,0,0,0,0, &
+      &    0,  0,  5,  5,  5,  5,  0, -5, 0,0,0,0,0,0,0,0, &
+      &  -10,  5,  5,  5,  5,  5,  0,-10, 0,0,0,0,0,0,0,0, &
+      &  -10,  0,  5,  0,  0,  0,  0,-10, 0,0,0,0,0,0,0,0, &
+      &  -20,-10,-10, -5, -5,-10,-10,-20,  0,0,0,0,0,0,0,0 /)
+
+    search_const1%piece_sq(bk,0:127) = (/ & 
+      &  -30,-40,-40,-50,-50,-40,-40,-30, 0,0,0,0,0,0,0,0, &
+      &  -30,-40,-40,-50,-50,-40,-40,-30, 0,0,0,0,0,0,0,0, &
+      &  -30,-40,-40,-50,-50,-40,-40,-30, 0,0,0,0,0,0,0,0, &
+      &  -30,-40,-40,-50,-50,-40,-40,-30, 0,0,0,0,0,0,0,0, &
+      &  -20,-30,-30,-40,-40,-30,-30,-20, 0,0,0,0,0,0,0,0, &
+      &  -10,-20,-20,-20,-20,-20,-20,-10, 0,0,0,0,0,0,0,0, &
+      &   20, 20,  0,  0,  0,  0, 20, 20, 0,0,0,0,0,0,0,0, &
+      &   20, 30, 10,  0,  0, 10, 30, 20,  0,0,0,0,0,0,0,0 /)
+      
+    search_const1%piece_sq(1:6,0:127) = search_const1%piece_sq(7:12,0:127)
+    do p_ind=0,6
+      call mirror(search_const1%piece_sq(p_ind,0:127))
     end do
   end subroutine
 

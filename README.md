@@ -27,7 +27,7 @@ Or download the lostchess.exe for 64bits Windows
 * ✔ moves writer
 * ✔ fen parser
 ### Search engine
-* static analyzer
+* ✔ static analyzer
 * min-max
 * get principal line
 * alpha-beta
