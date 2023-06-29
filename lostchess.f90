@@ -1,6 +1,7 @@
 
 program lostchess
   implicit none
+  integer,parameter::inf=2147483647
   integer,parameter::max_moves_per_game = 1024
   integer,parameter::max_moves_listed = 8192
   !side to move codes
@@ -158,11 +159,15 @@ program lostchess
   end type
   type(type_search_const)::search_const1
   
-  type type_search_handler
-    integer::ss_material(0:1)
+  type type_search_variables
+    !static score for each side
+    type(type_move)::best_move
+    integer::best_score
+    integer::calling_depth
+    integer::ss_material(0:1) 
     integer::ss_position(0:1)
   end type
-  type(type_search_handler)::search_handler1
+  type(type_search_variables)::search_variables1
 
   !testing variables
   integer::selected_option
@@ -175,7 +180,7 @@ program lostchess
     write(*,*) 'select options -----------------------------------------------------------------'
     write(*,*) '1 write board numbers | 2 test_common_moves | 3 test_gen_moves_nopawns'
     write(*,*) '4 test_do_undo_nopawns | 5 test_do_undo_wp | 6 test_do_undo_bp '
-    write(*,*) '7 perft | 8 test set_fen | 9 play'
+    write(*,*) '7 perft | 8 test set_fen | 9 play solo | 10 search'
     write(*,*) '--------------------------------------------------------------------------------'
     read*, selected_option
     select case (selected_option)
@@ -199,6 +204,8 @@ program lostchess
         do while(.true.)
           call ask_player()
         end do
+      case (10)
+        call search_handler1()
      case default
         exit
     end select
@@ -1241,18 +1248,56 @@ program lostchess
     end do
   end subroutine
   
-  subroutine static_eval()
-    integer::sq,pie,col
+  function static_eval() result(white_score)
+    integer::white_score,sq,pie,col
+    search_variables1%ss_material = 0
+    search_variables1%ss_position = 0
     do sq = 0,127
       if(iand(sq,136) == 0)then
         pie = board(sq)
         if(pie /= empty)then
           col = get_color(pie)
-          search_handler1%ss_material(col) = search_handler1%ss_material(col) + search_const1%piece_value(pie)
-          search_handler1%ss_position(col) = search_handler1%ss_position(col) + search_const1%piece_sq(pie,sq)
+          search_variables1%ss_material(col) = search_variables1%ss_material(col) + search_const1%piece_value(pie)
+          search_variables1%ss_position(col) = search_variables1%ss_position(col) + search_const1%piece_sq(pie,sq)
         end if
       end if
     end do
+    white_score = search_variables1%ss_material(team_white) - search_variables1%ss_material(team_black) &
+              & + search_variables1%ss_position(team_white) - search_variables1%ss_position(team_black)
+  end function
+  
+  recursive function min_max(depth) result(best_score)
+    integer::depth
+    integer::best_score
+    integer::score
+    integer::m_ind
+    best_score = -inf
+    if(depth==0)then
+      best_score = static_eval()
+      return
+    end if
+    call gen_moves()
+    do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
+      call make_move(moves_list(m_ind))
+      score = -min_max(depth-1)
+      call undo_last_move()
+      if(score > best_score)then
+        best_score = score
+        if(depth == search_variables1%calling_depth)then
+          search_variables1%best_move = moves_list(m_ind)
+        end if
+      end if      
+    end do
+    return
+  end function
+  
+  subroutine search_handler1
+    search_variables1%best_score = -inf
+    search_variables1%best_move = move_null
+    search_variables1%calling_depth = 4
+    search_variables1%best_score = min_max(search_variables1%calling_depth)
+    write(*,*)search_variables1%best_move
+    write(*,*)search_variables1%best_score
   end subroutine
   
   end program lostchess

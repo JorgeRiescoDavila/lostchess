@@ -28,7 +28,7 @@ Or download the lostchess.exe for 64bits Windows
 * ✔ fen parser
 ### Search engine
 * ✔ static analyzer
-* min-max
+* ✔ min-max
 * get principal line
 * alpha-beta
 * sorted alpha-beta and killers
