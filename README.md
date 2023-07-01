@@ -30,7 +30,7 @@ Or download the lostchess.exe for 64bits Windows
 * ✔ static analyzer
 * ✔ min-max
 * get principal line
-* alpha-beta
+* ✔ alpha-beta
 * sorted alpha-beta and killers
 * ✔ search handler
 * extensions

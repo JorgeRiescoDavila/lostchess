@@ -1,7 +1,7 @@
 
 program lostchess
   implicit none
-  integer,parameter::inf=2147483647
+  integer,parameter::inf=2**20
   integer,parameter::max_moves_per_game = 1024
   integer,parameter::max_moves_listed = 8192
   !side to move codes
@@ -153,24 +153,26 @@ program lostchess
   type(type_perft)::perft_results
   
   !search engine
-  type type_search_const
+  type type_search
+    !constants
     integer,dimension(0:12,0:127)::piece_sq
     integer,dimension(0:12)::piece_value
-  end type
-  type(type_search_const)::search_const1
-  
-  type type_search_variables
-    !static score for each side
-    type(type_move)::best_move
-    integer::best_score
-    integer::calling_depth
+    !variabless
     integer::ss_material(0:1) 
     integer::ss_position(0:1)
+    integer::calling_depth
+    integer::best_score
+    type(type_move)::best_move
+    type(type_move),dimension(0:8)::pline_buffer
+    type(type_move),dimension(0:8)::pline
+    ! statistics
+    integer::nodes
   end type
-  type(type_search_variables)::search_variables1
+  type(type_search)::srch1
 
   !testing variables
   integer::selected_option
+  type(type_move)::beston
   
   !init program
   call init()
@@ -205,7 +207,9 @@ program lostchess
           call ask_player()
         end do
       case (10)
-        call search_handler1()
+        call search_handler1(5)
+        ! write(*,*)srch1%best_move
+        ! call test_pline()
      case default
         exit
     end select
@@ -764,6 +768,13 @@ program lostchess
   end function
 
 !INPUT/OUTPUT UTILITIES--------------------------------------------------------- 
+
+  function move2alg(m) result(alg)
+    type(type_move):: m
+    character(len=5)::alg
+    alg = raw2algebraic(m%ini)//raw2algebraic(m%fin)//' '
+  end function
+
   subroutine write_board_numbers()
     integer,dimension(0:127)::board_numbers
     integer::ind  
@@ -799,6 +810,21 @@ program lostchess
     write(*,*) 'state%cp',state%cp
     write(*,*) 'state%ep', state%ep
     write(*,*) 'position_hash' ,position_hash
+  end subroutine
+  
+  subroutine write_board(board)
+    integer,dimension(0:127)::board
+    write(*,*) 'board'
+    write(*,'(A5,16(I4))') ' 1  |',board(0:16-1)
+    write(*,'(A5,16(I4))') ' 2  |',board(16:32-1)
+    write(*,'(A5,16(I4))') ' 3  |',board(32:48-1)
+    write(*,'(A5,16(I4))') ' 4  |',board(48:64-1)
+    write(*,'(A5,16(I4))') ' 5  |',board(64:80-1)
+    write(*,'(A5,16(I4))') ' 6  |',board(80:96-1)
+    write(*,'(A5,16(I4))') ' 7  |',board(96:112-1)
+    write(*,'(A5,16(I4))') ' 8  |',board(112:128-1)
+    write(*,*) '    ---------------------------------'
+    write(*,*) '       a   b   c   d   e   f   g   h'
   end subroutine
   
   subroutine write_moves()
@@ -1180,29 +1206,29 @@ program lostchess
   
   subroutine init_search_const()
     integer::p_ind
-    search_const1%piece_value = (/ 0,100,310,320,500,950,100000,100,310,320,500,950,100000 /)
+    srch1%piece_value = (/ 0,100,310,320,500,950,100000,100,310,320,500,950,100000 /)
   
-    search_const1%piece_sq(bp,0:127) = (/ & 
+    srch1%piece_sq(wp,0:127) = (/ & 
       &  0,  0,  0,  0,  0,  0,  0,  0, 0,0,0,0,0,0,0,0, &
       & 50, 50, 50, 50, 50, 50, 50, 50, 0,0,0,0,0,0,0,0, &
       & 10, 10, 20, 30, 30, 20, 10, 10, 0,0,0,0,0,0,0,0, &
-      &  5,  5, 10, 25, 25, 10,  5,  5, 0,0,0,0,0,0,0,0, &
+      &  5,  5, 10, 25,325, 10,  5,  5, 0,0,0,0,0,0,0,0, &
       &  0,  0,  0, 20, 20,  0,  0,  0, 0,0,0,0,0,0,0,0, &
       &  5, -5,-10,  0,  0,-10, -5,  5, 0,0,0,0,0,0,0,0, &
       &  5, 10, 10,-20,-20, 10, 10,  5, 0,0,0,0,0,0,0,0, &
       &  0,  0,  0,  0,  0,  0,  0,  0, 0,0,0,0,0,0,0,0 /)
       
-    search_const1%piece_sq(bn,0:127) = (/ & 
+    srch1%piece_sq(wn,0:127) = (/ & 
       & -50,-40,-30,-30,-30,-30,-40,-50, 0,0,0,0,0,0,0,0, &
       & -40,-20,  0,  0,  0,  0,-20,-40, 0,0,0,0,0,0,0,0, &
-      & -30,  0, 10, 15, 15, 10,  0,-30, 0,0,0,0,0,0,0,0, &
+      & -30,  0, 10, 15, 15,110,  0,-30, 0,0,0,0,0,0,0,0, &
       & -30,  5, 15, 20, 20, 15,  5,-30, 0,0,0,0,0,0,0,0, &
       & -30,  0, 15, 20, 20, 15,  0,-30, 0,0,0,0,0,0,0,0, &
       & -30,  5, 10, 15, 15, 10,  5,-30, 0,0,0,0,0,0,0,0, &
       & -40,-20,  0,  5,  5,  0,-20,-40, 0,0,0,0,0,0,0,0, &
       & -50,-40,-30,-30,-30,-30,-40,-50, 0,0,0,0,0,0,0,0 /)
       
-    search_const1%piece_sq(bb,0:127) = (/ & 
+    srch1%piece_sq(wb,0:127) = (/ & 
       &  -20,-10,-10,-10,-10,-10,-10,-20, 0,0,0,0,0,0,0,0, &
       &  -10,  0,  0,  0,  0,  0,  0,-10, 0,0,0,0,0,0,0,0, &
       &  -10,  0,  5, 10, 10,  5,  0,-10, 0,0,0,0,0,0,0,0, &
@@ -1212,7 +1238,7 @@ program lostchess
       &  -10,  5,  0,  0,  0,  0,  5,-10, 0,0,0,0,0,0,0,0, &
       &  -20,-10,-10,-10,-10,-10,-10,-20, 0,0,0,0,0,0,0,0 /)
 
-    search_const1%piece_sq(br,0:127) = (/ & 
+    srch1%piece_sq(wr,0:127) = (/ & 
       &  0,  0,  0,  0,  0,  0,  0,  0, 0,0,0,0,0,0,0,0, &
       &  5, 10, 10, 10, 10, 10, 10,  5, 0,0,0,0,0,0,0,0, &
       & -5,  0,  0,  0,  0,  0,  0, -5, 0,0,0,0,0,0,0,0, &
@@ -1222,7 +1248,7 @@ program lostchess
       & -5,  0,  0,  0,  0,  0,  0, -5, 0,0,0,0,0,0,0,0, &
       &  0,  0,  0,  5,  5,  0,  0,  0,  0,0,0,0,0,0,0,0 /)
       
-    search_const1%piece_sq(bq,0:127) = (/ & 
+    srch1%piece_sq(wq,0:127) = (/ & 
       &  -20,-10,-10, -5, -5,-10,-10,-20, 0,0,0,0,0,0,0,0, &
       &  -10,  0,  0,  0,  0,  0,  0,-10, 0,0,0,0,0,0,0,0, &
       &  -10,  0,  5,  5,  5,  5,  0,-10, 0,0,0,0,0,0,0,0, &
@@ -1232,7 +1258,7 @@ program lostchess
       &  -10,  0,  5,  0,  0,  0,  0,-10, 0,0,0,0,0,0,0,0, &
       &  -20,-10,-10, -5, -5,-10,-10,-20,  0,0,0,0,0,0,0,0 /)
 
-    search_const1%piece_sq(bk,0:127) = (/ & 
+    srch1%piece_sq(wk,0:127) = (/ & 
       &  -30,-40,-40,-50,-50,-40,-40,-30, 0,0,0,0,0,0,0,0, &
       &  -30,-40,-40,-50,-50,-40,-40,-30, 0,0,0,0,0,0,0,0, &
       &  -30,-40,-40,-50,-50,-40,-40,-30, 0,0,0,0,0,0,0,0, &
@@ -1242,62 +1268,149 @@ program lostchess
       &   20, 20,  0,  0,  0,  0, 20, 20, 0,0,0,0,0,0,0,0, &
       &   20, 30, 10,  0,  0, 10, 30, 20,  0,0,0,0,0,0,0,0 /)
       
-    search_const1%piece_sq(1:6,0:127) = search_const1%piece_sq(7:12,0:127)
-    do p_ind=0,6
-      call mirror(search_const1%piece_sq(p_ind,0:127))
+    srch1%piece_sq(7:12,0:127) = srch1%piece_sq(1:6,0:127)
+    do p_ind=7,12
+      call mirror(srch1%piece_sq(p_ind,0:127))
+    end do
+    ! call write_piece_value()
+  end subroutine
+  
+  subroutine write_piece_value()
+    integer::pie
+    do pie=1,12
+      write(*,*)pie
+      call write_board(srch1%piece_sq(pie,0:127))
     end do
   end subroutine
   
   function static_eval() result(white_score)
     integer::white_score,sq,pie,col
-    search_variables1%ss_material = 0
-    search_variables1%ss_position = 0
+    srch1%ss_material = 0
+    srch1%ss_position = 0
     do sq = 0,127
       if(iand(sq,136) == 0)then
         pie = board(sq)
         if(pie /= empty)then
           col = get_color(pie)
-          search_variables1%ss_material(col) = search_variables1%ss_material(col) + search_const1%piece_value(pie)
-          search_variables1%ss_position(col) = search_variables1%ss_position(col) + search_const1%piece_sq(pie,sq)
+          srch1%ss_material(col) = srch1%ss_material(col) + srch1%piece_value(pie)
+          srch1%ss_position(col) = srch1%ss_position(col) + srch1%piece_sq(pie,sq)
         end if
       end if
     end do
-    white_score = search_variables1%ss_material(team_white) - search_variables1%ss_material(team_black) &
-              & + search_variables1%ss_position(team_white) - search_variables1%ss_position(team_black)
+    white_score = srch1%ss_material(team_white) - srch1%ss_material(team_black) &
+              & + srch1%ss_position(team_white) - srch1%ss_position(team_black)
+    if(state%side == team_black) white_score = -white_score         
   end function
   
-  recursive function min_max(depth) result(best_score)
+  ! recursive function min_max(depth,pline) result(best_score)
+    ! integer::depth
+    ! integer::best_score
+    ! integer::score
+    ! integer::m_ind
+    ! type(type_move)::m
+    ! type(type_move),dimension(0:8)::pline
+    ! !init
+    ! best_score = -inf
+    ! !leaf node
+    ! if(depth==srch1%calling_depth)then
+      ! best_score = static_eval()
+      ! srch1%nodes = srch1%nodes + 1
+      ! return
+    ! end if
+    ! !expand tree
+    ! call gen_moves()
+    ! do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
+      ! m = moves_list(m_ind)
+      ! pline(depth) = m
+        ! ! write(*,*)'entering branch ', &
+          ! ! & move2alg(pline(0)),move2alg(pline(1)), &
+          ! ! & move2alg(pline(2)),move2alg(pline(3))
+      ! call make_move(m)
+      ! score = -min_max(depth+1,pline)
+      ! call undo_last_move()
+      ! if(score > best_score)then
+        ! best_score = score
+        ! srch1%pline_buffer(depth) = m
+        ! srch1%pline_buffer(depth+1:srch1%calling_depth) = srch1%pline_buffer(depth+1:srch1%calling_depth)
+        ! ! write(*,*)'best_line ', &
+          ! ! & move2alg(srch1%pline_buffer(0)),move2alg(srch1%pline_buffer(1)), &
+          ! ! & move2alg(srch1%pline_buffer(2)),move2alg(srch1%pline_buffer(3)), &
+          ! ! & ' at depth ',depth, 'scoring ',best_score
+        ! if(depth == 0)then
+          ! srch1%best_move = moves_list(m_ind)
+        ! end if
+      ! end if      
+    ! end do
+  ! end function
+  
+  recursive function alpha_beta(depth,alpha,beta,pline) result(best_score)
     integer::depth
-    integer::best_score
+    integer::best_score,beta,alpha
     integer::score
     integer::m_ind
-    best_score = -inf
-    if(depth==0)then
+    type(type_move)::m
+    type(type_move),dimension(0:8)::pline
+    best_score = alpha
+    if(depth==srch1%calling_depth)then
       best_score = static_eval()
+      srch1%nodes = srch1%nodes + 1
       return
     end if
+    ! !expand tree
     call gen_moves()
     do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
-      call make_move(moves_list(m_ind))
-      score = -min_max(depth-1)
+      m = moves_list(m_ind)
+      pline(depth) = m
+      call make_move(m)
+        score = -alpha_beta(depth+1,-beta,-alpha,pline)
       call undo_last_move()
+      if(score >= beta)then
+        best_score = beta
+        return
+      end if
       if(score > best_score)then
         best_score = score
-        if(depth == search_variables1%calling_depth)then
-          search_variables1%best_move = moves_list(m_ind)
+        srch1%pline_buffer(depth) = m
+        srch1%pline_buffer(depth+1:srch1%calling_depth) = srch1%pline_buffer(depth+1:srch1%calling_depth)
+        if(depth == 0)then
+          srch1%best_move = moves_list(m_ind)
         end if
       end if      
     end do
-    return
   end function
   
-  subroutine search_handler1
-    search_variables1%best_score = -inf
-    search_variables1%best_move = move_null
-    search_variables1%calling_depth = 4
-    search_variables1%best_score = min_max(search_variables1%calling_depth)
-    write(*,*)search_variables1%best_move
-    write(*,*)search_variables1%best_score
+  subroutine search_handler1(depth)
+    integer::depth
+    !init
+    srch1%pline_buffer = move_null
+    srch1%pline = move_null
+    srch1%best_score = -inf
+    srch1%best_move = move_null
+    srch1%calling_depth = depth
+    srch1%nodes = 0
+    !call tree
+    srch1%best_score = alpha_beta(0,-inf,inf,srch1%pline)
+    ! write results
+    write(*,*)'best_move ',move2alg(srch1%best_move)
+    write(*,*)'best_score ',srch1%best_score
+    write(*,*)'best_line ', &
+      & move2alg(srch1%pline_buffer(0)),move2alg(srch1%pline_buffer(1)), &
+      & move2alg(srch1%pline_buffer(2)),move2alg(srch1%pline_buffer(3))
+    write(*,*)'nodes ',srch1%nodes
+  end subroutine
+  
+  subroutine test_pline
+    ! type(type_move),dimension(0:8)::auto_pline,step_plinek
+    type(type_move)::best_move
+    call search_handler1(3)
+    write(*,*)move2alg(srch1%best_move)
+    call make_move(srch1%best_move)
+    call search_handler1(2)
+    write(*,*)move2alg(srch1%best_move)
+    call make_move(srch1%best_move)
+    call search_handler1(1)
+    write(*,*)move2alg(srch1%best_move)
+    call make_move(srch1%best_move)
   end subroutine
   
   end program lostchess
