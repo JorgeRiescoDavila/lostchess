@@ -81,16 +81,6 @@ program lostchess
   integer,dimension(0:7),parameter::directions_rook_bishop = (/  1, 16, -1,-16, 15, 17,-15,-17/)
   integer,dimension(0:7),parameter::directions_knight      = (/ 14, 18, 31, 33,-14,-18,-31,-33/)
   
-  character(len=2),parameter,dimension(-1:127)::raw2algebraic = (/ '- ', & 
-  &'a1','b1','c1','d1','e1','f1','g1','h1','ob','ob','ob','ob','ob','ob','ob','ob', &
-  &'a2','b2','c2','d2','e2','f2','g2','h2','ob','ob','ob','ob','ob','ob','ob','ob', &
-  &'a3','b3','c3','d3','e3','f3','g3','h3','ob','ob','ob','ob','ob','ob','ob','ob', &
-  &'a4','b4','c4','d4','e4','f4','g4','h4','ob','ob','ob','ob','ob','ob','ob','ob', &
-  &'a5','b5','c5','d5','e5','f5','g5','h5','ob','ob','ob','ob','ob','ob','ob','ob', &
-  &'a6','b6','c6','d6','e6','f6','g6','h6','ob','ob','ob','ob','ob','ob','ob','ob', &
-  &'a7','b7','c7','d7','e7','f7','g7','h7','ob','ob','ob','ob','ob','ob','ob','ob', &
-  &'a8','b8','c8','d8','e8','f8','g8','h8','ob','ob','ob','ob','ob','ob','ob','ob' /)
-  
   type type_move
     integer::ini
     integer::fin
@@ -180,24 +170,12 @@ program lostchess
 
   do while (.true.)
     write(*,*) 'select options -----------------------------------------------------------------'
-    write(*,*) '1 write board numbers | 2 test_common_moves | 3 test_gen_moves_nopawns'
-    write(*,*) '4 test_do_undo_nopawns | 5 test_do_undo_wp | 6 test_do_undo_bp '
-    write(*,*) '7 perft | 8 test set_fen | 9 play solo | 10 search'
+    write(*,*) '1 write board numbers | 7 perft | 8 test set_fen | 9 play solo | 10 search'
     write(*,*) '--------------------------------------------------------------------------------'
     read*, selected_option
     select case (selected_option)
       case (1)
-        call write_board_numbers
-      case (2)
-        call test_common_moves()
-      case (3)
-        call test_gen_moves_nopawns()
-      case (4)
-        call test_do_undo_nopawns
-      case (5)
-        call test_do_undo_wp
-      case (6)
-        call test_do_undo_bp
+        call write_board_numbers()
       case (7)
         call perft_handler()
       case (8)
@@ -216,26 +194,6 @@ program lostchess
   end do
   
   contains
-  
-  subroutine mirror(board)
-    integer,dimension(0:127)::board
-    integer,dimension(0:15)::aux_row
-    aux_row = board(0:15)
-    board(0:15) = board(112:127)
-    board(112:127) = aux_row
-    
-    aux_row = board(16:31)
-    board(16:31) = board(96:111)
-    board(96:111) = aux_row
-    
-    aux_row = board(32:47)
-    board(32:47) = board(80:95)
-    board(80:95) = aux_row
-    
-    aux_row = board(48:63)
-    board(48:63) = board(64:79)
-    board(64:79) = aux_row
-  end subroutine
   
   subroutine ask_player()
     integer::m_ind = -1
@@ -769,41 +727,39 @@ program lostchess
 
 !INPUT/OUTPUT UTILITIES--------------------------------------------------------- 
 
-  function move2alg(m) result(alg)
-    type(type_move):: m
-    character(len=5)::alg
-    alg = raw2algebraic(m%ini)//raw2algebraic(m%fin)//' '
-  end function
+  subroutine mirror(board)
+    integer,dimension(0:127)::board
+    integer,dimension(0:7,0:15)::rows
+    integer::row 
+    do row=0,7
+      rows(row,0:15) = board(16*row:16*row+15)
+    end do
+    do row=0,7
+      board(16*row:16*row+15) = rows(7-row,0:15)
+    end do
+  end subroutine
 
   subroutine write_board_numbers()
-    integer,dimension(0:127)::board_numbers
-    integer::ind  
+    integer,dimension(0:127)::board
+    integer::ind,row 
     do ind=0,127
-      board_numbers(ind) = ind
+      board(ind) = ind
     end do
     write(*,*) 'board_numbers'
-    write(*,'(A5,16(I4))') ' 1  |',board_numbers(0:16-1)
-    write(*,'(A5,16(I4))') ' 2  |',board_numbers(16:32-1)
-    write(*,'(A5,16(I4))') ' 3  |',board_numbers(32:48-1)
-    write(*,'(A5,16(I4))') ' 4  |',board_numbers(48:64-1)
-    write(*,'(A5,16(I4))') ' 5  |',board_numbers(64:80-1)
-    write(*,'(A5,16(I4))') ' 6  |',board_numbers(80:96-1)
-    write(*,'(A5,16(I4))') ' 7  |',board_numbers(96:112-1)
-    write(*,'(A5,16(I4))') ' 8  |',board_numbers(112:128-1)
+    write(*,*) '    ---------------------------------'
+    do row=0,7
+      write(*,'(A1,I1,A3,16(I4))') ' ',row+1,'  |',board(16*row:16*row+15)
+    end do
     write(*,*) '    ---------------------------------'
     write(*,*) '       a   b   c   d   e   f   g   h'
   end subroutine
   
   subroutine write_board_raw()
+    integer::row
     write(*,*) 'board'
-    write(*,'(A5,16(I4))') ' 1  |',board(0:16-1)
-    write(*,'(A5,16(I4))') ' 2  |',board(16:32-1)
-    write(*,'(A5,16(I4))') ' 3  |',board(32:48-1)
-    write(*,'(A5,16(I4))') ' 4  |',board(48:64-1)
-    write(*,'(A5,16(I4))') ' 5  |',board(64:80-1)
-    write(*,'(A5,16(I4))') ' 6  |',board(80:96-1)
-    write(*,'(A5,16(I4))') ' 7  |',board(96:112-1)
-    write(*,'(A5,16(I4))') ' 8  |',board(112:128-1)
+    do row=0,7
+      write(*,'(A1,I1,A3,16(I4))') ' ',row+1,'  |',board(16*row:16*row+15)
+    end do
     write(*,*) '    ---------------------------------'
     write(*,*) '       a   b   c   d   e   f   g   h'
     write(*,*) 'state%side', state%side
@@ -814,42 +770,74 @@ program lostchess
   
   subroutine write_board(board)
     integer,dimension(0:127)::board
-    write(*,*) 'board'
-    write(*,'(A5,16(I4))') ' 1  |',board(0:16-1)
-    write(*,'(A5,16(I4))') ' 2  |',board(16:32-1)
-    write(*,'(A5,16(I4))') ' 3  |',board(32:48-1)
-    write(*,'(A5,16(I4))') ' 4  |',board(48:64-1)
-    write(*,'(A5,16(I4))') ' 5  |',board(64:80-1)
-    write(*,'(A5,16(I4))') ' 6  |',board(80:96-1)
-    write(*,'(A5,16(I4))') ' 7  |',board(96:112-1)
-    write(*,'(A5,16(I4))') ' 8  |',board(112:128-1)
+    integer::row
     write(*,*) '    ---------------------------------'
-    write(*,*) '       a   b   c   d   e   f   g   h'
-  end subroutine
-  
-  subroutine write_moves()
-    character(len=2),parameter,dimension(0:12)::raw2piece_type = &
-    & (/ '[]','wp','wn','wb','wr','wq','wk','bp','bn','bb','br','bq','bk' /)
-    integer::m_ind
-    write(*,'(I4,A7,I8,A3,I8)') moves_list_ind(ply+1)-moves_list_ind(ply), &
-    & ' moves ',moves_list_ind(ply),' to',moves_list_ind(ply+1)-1
-    write(*,*) '  ind | piece,ini,fin | ini,fin,capture,promo,start,ep,castle,captured:'
-    do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
-      write(*,'(I8,A4,A3,A3,I12,I4,L2,I4,L2,L2,L2,I4)') m_ind, &
-      & raw2piece_type(board(moves_list(m_ind)%ini)), &
-      & raw2algebraic(moves_list(m_ind)%ini), &
-      & raw2algebraic(moves_list(m_ind)%fin), &
-      & moves_list(m_ind)
+    do row=0,7
+      write(*,'(A1,I1,A3,16(I4))') ' ',row+1,'  |',board(16*row:16*row+15)
     end do
+    write(*,*) '    ---------------------------------'
+    write(*,*) '       a   b   c   d   e   f   g   h'    
   end subroutine
   
-  function algebraic2raw(tile)
-    character(len=2)::tile
-    integer::algebraic2raw
-    do algebraic2raw=0,127
-      if(raw2algebraic(algebraic2raw) == tile)exit
+  function raw2alg(sq) result(alg)
+    character(len=2)::alg
+    integer::sq
+    character(len=2),parameter,dimension(-1:127)::raw2alg_table = (/ '- ', & 
+      &'a1','b1','c1','d1','e1','f1','g1','h1','ob','ob','ob','ob','ob','ob','ob','ob', &
+      &'a2','b2','c2','d2','e2','f2','g2','h2','ob','ob','ob','ob','ob','ob','ob','ob', &
+      &'a3','b3','c3','d3','e3','f3','g3','h3','ob','ob','ob','ob','ob','ob','ob','ob', &
+      &'a4','b4','c4','d4','e4','f4','g4','h4','ob','ob','ob','ob','ob','ob','ob','ob', &
+      &'a5','b5','c5','d5','e5','f5','g5','h5','ob','ob','ob','ob','ob','ob','ob','ob', &
+      &'a6','b6','c6','d6','e6','f6','g6','h6','ob','ob','ob','ob','ob','ob','ob','ob', &
+      &'a7','b7','c7','d7','e7','f7','g7','h7','ob','ob','ob','ob','ob','ob','ob','ob', &
+      &'a8','b8','c8','d8','e8','f8','g8','h8','ob','ob','ob','ob','ob','ob','ob','ob' /)
+    alg = raw2alg_table(sq)
+  end function
+  
+  function alg2raw(alg) result(sq)
+    character(len=2)::alg
+    integer::sq
+    do sq=0,127
+      if(raw2alg(sq) == alg)exit
     end do
   end function
+  
+  function move2alg(m) result(alg)
+    type(type_move)::m
+    character(len=4)::alg
+    alg = raw2alg(m%ini)//raw2alg(m%fin)//' '
+  end function
+  
+  function alg2move(alg) result(m)
+    type(type_move)::m
+    character(len=4)::alg
+    integer::ini,fin,m_ind
+    ini=alg2raw(alg(1:2))
+    fin=alg2raw(alg(3:4))
+    do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
+      m = moves_list(m_ind)
+      if(m%ini == ini .and. m%fin == fin) return
+    end do
+    m = move_null
+  end function
+  
+  subroutine write_moves()
+    integer::m_ind
+    type(type_move)::m
+    write(*,*)'List of moves:'
+    do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
+      m=moves_list(m_ind)
+      write(*,'(A4,I8,A1,I4,I4,L2,I4,L2,L2,L2,I4)')move2alg(m),m_ind,'|',m
+    end do
+  end subroutine
+  
+  subroutine write_piece_value()
+    integer::pie
+    do pie=1,12
+      write(*,*)pie
+      call write_board(srch1%piece_sq(pie,0:127))
+    end do
+  end subroutine
   
   function get_fen()
     character(len=9*8+2+5+3+3+4)::get_fen
@@ -877,7 +865,7 @@ program lostchess
     end do
     get_fen = trim(get_fen)//trim(fen_sq(emptys))
     !fen side,castling,enpassant,50move,ply
-    get_fen = trim(get_fen)//fen_side(state%side)//trim(int2fen_cp(state%cp))//raw2algebraic(state%ep)
+    get_fen = trim(get_fen)//fen_side(state%side)//trim(int2fen_cp(state%cp))//raw2alg(state%ep)
     ! get_fen = trim(get_fen)//ply
   end function
   
@@ -961,7 +949,7 @@ program lostchess
     end do
     
     do ep_ind = -1,127
-      if(fen_ep == raw2algebraic(ep_ind))then
+      if(fen_ep == raw2alg(ep_ind))then
         state%ep = ep_ind
         exit
       end if
@@ -970,96 +958,6 @@ program lostchess
   end subroutine
   
 !TESTS -------------------------------------------------------------------------  
-  subroutine test_common_moves()
-    integer::ini
-    call write_board_numbers
-    board = empty
-    write(*,*) 'select starting tile'
-    read*, ini
-    write(*,'(A,I4)') 'moves for a rook in',ini
-    call restart_game()
-    board = empty
-    call gen_common_moves(ini,directions_rook,.TRUE.)
-    call write_moves()
-    write(*,'(A,I4)') 'moves for a bishop in',ini
-    call restart_game()
-    board = empty
-    call gen_common_moves(ini,directions_bishop,.TRUE.)
-    call write_moves()
-    write(*,'(A,I4)') 'moves for a queen in',ini
-    call restart_game()
-    board = empty
-    call gen_common_moves(ini,directions_rook_bishop,.TRUE.)
-    call write_moves()
-    write(*,'(A,I4)') 'moves for a king in',ini
-    call restart_game()
-    board = empty
-    call gen_common_moves(ini,directions_rook_bishop,.FALSE.)
-    call write_moves()
-    write(*,'(A,I4)') 'moves for a knight in',ini
-    call restart_game()
-    board = empty
-    call gen_common_moves(ini,directions_knight,.FALSE.)
-    call write_moves()
-  end subroutine
-  
-  subroutine test_gen_moves_nopawns()
-    call write_board_numbers 
-    call restart_game()
-    board = empty
-    board(a1:h1) = (/wr,wn,wb,wq,wk,wb,wn,wr/)
-    board(a8:h8) = (/br,bn,bb,bq,bk,bb,bn,br/)
-    call write_board_raw 
-    call gen_moves()
-    call write_moves()
-  end subroutine
-  
-  subroutine test_do_undo_nopawns()
-    integer::m
-    call write_board_numbers
-    call restart_game()
-    board = empty
-    board(a1:h1) = (/wr,wn,wb,wq,wk,wb,wn,wr/)
-    board(a8:h8) = (/br,bn,bb,bq,bk,bb,bn,br/)
-    call write_board_raw
-    call gen_moves()
-    do m = moves_list_ind(ply),moves_list_ind(ply+1)-1
-      call make_move(moves_list(m))
-      call undo_last_move()
-    end do
-    call write_board_raw
-  end subroutine
-  
-  subroutine test_do_undo_wp()
-    integer::m
-    call write_board_numbers
-    call restart_game()
-    board = empty
-    board(a2:h2) = wp
-    call write_board_raw
-    call gen_moves()
-    do m = moves_list_ind(ply),moves_list_ind(ply+1)-1
-      call make_move(moves_list(m))
-      call undo_last_move()
-    end do
-    call write_board_raw
-  end subroutine
-  
-  subroutine test_do_undo_bp()
-    integer::m
-    call write_board_numbers
-    call restart_game()
-    state%side = team_black
-    board = empty
-    board(a7:h7) = bp
-    call write_board_raw
-    call gen_moves()
-    do m = moves_list_ind(ply),moves_list_ind(ply+1)-1
-      call make_move(moves_list(m))
-      call undo_last_move()
-    end do
-    call write_board_raw
-  end subroutine
   
   subroutine test_set_fen()
   integer,dimension(0:127)::cp_board
@@ -1274,15 +1172,7 @@ program lostchess
     end do
     ! call write_piece_value()
   end subroutine
-  
-  subroutine write_piece_value()
-    integer::pie
-    do pie=1,12
-      write(*,*)pie
-      call write_board(srch1%piece_sq(pie,0:127))
-    end do
-  end subroutine
-  
+   
   function static_eval() result(white_score)
     integer::white_score,sq,pie,col
     srch1%ss_material = 0
