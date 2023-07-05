@@ -138,6 +138,12 @@ program lostchess
   type(type_move),dimension(0:max_moves_listed-1)::moves_list
   integer,dimension(0:max_moves_listed-1)::moves_score
   
+  !piece list
+  type type_piece_list
+    integer,dimension(0:1)::kings
+  end type
+  type(type_piece_list)::piece_list
+  
   !perft
   type type_perft
     integer::node
@@ -261,7 +267,9 @@ program lostchess
     hist%move = move_null
     !reastart list of moves
     moves_list_ind = 0
-    moves_list = move_null 
+    moves_list = move_null
+    !restart piece list
+    piece_list%kings = (/ e1,e8 /)
   end subroutine
   
   function hash_position() result(hash)
@@ -346,11 +354,12 @@ program lostchess
     m%captured_pie = captured_pie
     
     call make_move(m)
-    do king_ind = 0,127
-      if(is_king(board(king_ind)) .and. get_color(board(king_ind)) == ieor(1,state%side))then
-        exit
-      end if
-    end do
+    ! do king_ind = 0,127
+      ! if(is_king(board(king_ind)) .and. get_color(board(king_ind)) == ieor(1,state%side))then
+        ! exit
+      ! end if
+    ! end do
+    king_ind = piece_list%kings(ieor(1,state%side))
     if(.not. is_attacked(king_ind,state%side))then
       is_legal =.true.
     end if
@@ -570,7 +579,9 @@ program lostchess
       do while (iand(fin,136) == 0)
         if(board(fin) == empty)then
         else if(there_is_enemy_on(fin)) then
-          call add_move(ini,fin,.TRUE.,empty,.FALSE.,.FALSE.,.FALSE.,board(fin))
+          if(.not. is_pawn(board(fin)))then
+            call add_move(ini,fin,.TRUE.,empty,.FALSE.,.FALSE.,.FALSE.,board(fin))
+          end if  
           exit
         else
           exit
@@ -620,6 +631,15 @@ program lostchess
     
     if(m%is_capture) state%rule50 = 0
     if(is_pawn(board(m%ini))) state%rule50 = 0
+    
+    if(is_king(board(m%ini)))then
+      if(get_color(board(m%ini)) == team_white)then
+        piece_list%kings(team_white) = m%fin
+      end if
+      if(get_color(board(m%ini)) == team_black)then
+        piece_list%kings(team_black) = m%fin
+      end if
+    end if
     
     position_hash = ieor(position_hash,hash_table%cp(state%cp))
     state%cp = iand(state%cp,cp_table(m%ini))
@@ -715,6 +735,16 @@ program lostchess
     state%ep = hist(ply)%ep
     state%rule50 = hist(ply)%rule50
     position_hash = hist(ply)%hash
+    
+    if(is_king(board(m%fin)))then
+      if(get_color(board(m%fin)) == team_white)then
+        piece_list%kings(team_white) = m%ini
+      end if
+      if(get_color(board(m%fin)) == team_black)then
+        piece_list%kings(team_black) = m%ini
+      end if
+    end if
+    
     ! write(*,*)'undo',m
     state%side = ieor(1,state%side)
     
@@ -1025,7 +1055,7 @@ program lostchess
     character(len=1),dimension(0:12)::pie = (/'-','P','N','B','R','Q','K','p','n','b','r','q','k'/)
     character(len=4),dimension(0:15):: int2fen_cp = (/ &
     &'    ','K   ','Q   ','KQ  ','k   ','Kk  ','Qk  ','KQk ','q   ','Kq  ','Qq  ','KQq ','kq  ','Kkq ','Qkq ','KQkq' /)
-    integer::row_ind,col_ind,pie_ind,fen_board_ind,tile,emptys,fen_cp_ind,ep_ind,cp_ind
+    integer::row_ind,col_ind,pie_ind,fen_board_ind,tile,emptys,fen_cp_ind,ep_ind,cp_ind,sq_king
     logical::is_empty
     
     fen = trim(fen_in)
@@ -1095,6 +1125,17 @@ program lostchess
       if(fen_ep == raw2alg(ep_ind))then
         state%ep = ep_ind
         exit
+      end if
+    end do
+    
+    do sq_king = 0,127
+      if(is_king(board(sq_king)))then
+        if(get_color(board(sq_king)) == team_white)then
+          piece_list%kings(team_white) = sq_king
+        end if
+        if(get_color(board(sq_king)) == team_black)then
+          piece_list%kings(team_black) = sq_king
+        end if
       end if
     end do
     

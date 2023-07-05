@@ -10,12 +10,12 @@ start lostchess.exe
 Or download the lostchess.exe for 64bits Windows
 
 ##Roadmap
-* king history
 * depth based to time based search
 * piece tables for finals
 * test finals
 * debug quiescient
 * debug score/sort moves
+
 ###Could have
 * handle promotions on read move
 * hash empty piece = 0
