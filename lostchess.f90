@@ -8,6 +8,7 @@ program lostchess
   integer,parameter::team_white = 0
   integer,parameter::team_black = 1
   integer,parameter::team_none = 2
+  integer,parameter::team_both = 3
   !piece codes
   integer,parameter::empty = 0
   integer,parameter::wp = 1
@@ -168,7 +169,7 @@ program lostchess
   type(type_search)::srch1
 
   !testing variables
-  integer::selected_option,alpha_beta_result,nodes
+  integer::selected_option,winner
   
   !init program
   call init()
@@ -176,29 +177,40 @@ program lostchess
 
   do while (.true.)
     write(*,*) 'select options -----------------------------------------------------------------'
-    write(*,*) '1 write board numbers | 2 perft | 3 PvP | 4PvE | 5 mate in 3'
+    write(*,*) '1 PVP | 2 PVE | 3 PerfTest'
     write(*,*) '--------------------------------------------------------------------------------'
     read*, selected_option
     select case (selected_option)
       case (1)
-        call write_board_numbers()
-      case (2)
-        call perft_handler()
-      case (3)
+        call restart_game()
         do while(.true.)
           call player_handler()
+          winner = check_end()
+          if(winner /= team_none)then
+            write(*,*)'WINNER ',winner
+            exit
+          end if
         end do
-      case (4)
-        ! do while(.true.)
-        ! call player_handler()
-        call search_handler1(5)
-        ! nodes = 0
-        ! alpha_beta_result = alpha_beta(5,-99999999,99999999)
-        write(*,*)nodes
-        ! end do
-      case(5)
-        call test_mate3()
-     case default
+      case (2)
+        call restart_game()      
+        do while(.true.)
+          call search_handler1(6)
+          call make_move(srch1%best_move)
+          winner = check_end()
+          if(winner /= team_none)then
+            write(*,*)'WINNER ',winner
+            exit
+          end if
+          call player_handler()
+          winner = check_end()
+          if(winner /= team_none)then
+            write(*,*)'WINNER ',winner
+            exit
+          end if
+        end do
+      case (3)
+        call perft_handler()
+      case default
         exit
     end select
   end do
@@ -264,6 +276,46 @@ program lostchess
     hash = ieor(hash,hash_table%side)
     hash = ieor(hash,hash_table%ep)
     hash = ieor(hash,hash_table%cp(state%cp))
+  end function
+
+!END
+
+  function check_end() result(winner)
+    integer::winner,rule50_ind,reps,king_ind
+    winner = team_none
+    reps = 1
+    !50 move rule
+    if(state%rule50 == 100)then
+      winner = team_both
+      return
+    end if
+    !threefold repetition
+    do rule50_ind = 1,state%rule50
+      if(hist(ply-rule50_ind)%hash == position_hash)then
+        reps = reps+1
+        if(reps == 3)then
+          winner = team_both
+          return
+        end if
+      end if
+    end do
+    !checkmate/stalemate
+    call gen_moves()
+    ! call write_moves()
+    if(moves_list_ind(ply) == moves_list_ind(ply+1))then
+      do king_ind = 0,127
+        if(is_king(board(king_ind)) .and. get_color(board(king_ind)) == state%side)then
+          exit
+        end if
+      end do
+      if(is_attacked(king_ind,ieor(1,state%side)))then
+        winner = ieor(1,state%side)
+        return
+      else
+        winner = team_both
+        return
+      end if
+    end if
   end function
 
 !MOVE GENERATOR
@@ -1393,12 +1445,12 @@ program lostchess
     type(type_move)::m
     !init
     best_score = alpha
-    !check end
+    ! !check end
     if(state%rule50 == 100)then
       best_score = 0
       return
     end if
-    do rule50_ind = 0,state%rule50
+    do rule50_ind = 1,state%rule50
       if(hist(ply-rule50_ind)%hash == position_hash)then
         best_score = 0
         return
@@ -1411,10 +1463,10 @@ program lostchess
       ! best_score = -quies(-beta,-best_score)
       return
     end if
-    !expand tree
+    ! !expand tree
     call gen_moves()
-    !game ends
-    if(moves_list_ind(ply) == moves_list_ind(ply+1)-1)then
+    ! !game ends
+    if(moves_list_ind(ply) == moves_list_ind(ply+1))then
       do king_ind = 0,127
         if(is_king(board(king_ind)) .and. get_color(board(king_ind)) == state%side)then
           exit
@@ -1427,19 +1479,20 @@ program lostchess
       end if
       return
     end if
-    call score_moves(depth)
-    do while(.true.)
-      m_ind = select_next_best()
-      if(m_ind == -1) exit
-    ! do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
+    ! call score_moves(depth)
+    ! do while(.true.)
+      ! m_ind = select_next_best()
+      ! m = moves_list(m_ind)
+      ! if(m_ind == -1) exit
+    do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
       m = moves_list(m_ind)
-      ! write(*,*)m
+      ! ! write(*,*)m
       call make_move(m)
       v = -alpha_beta(depth+1,-beta,-best_score)
       call undo_last_move()
       if(v >= beta)then
         best_score = beta
-        srch1%killers(depth) = m
+        ! srch1%killers(depth) = m
         return
       end if
       if(v > best_score)then
