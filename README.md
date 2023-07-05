@@ -9,30 +9,21 @@ start lostchess.exe
 ```
 Or download the lostchess.exe for 64bits Windows
 
-## Roadmap
-### Core
-* ✔ board representation and constants definitions
-* ✔ move generator
-* ✔ add move to list
-* ✔ move maker
-* ✔ move unmaker
-* ✔ attacked square
-* ✔ hash position 
-### Tests
-* ✔ unit tests
-* ✔ perft
-* test hash
-### Utilities and I/O
-* ✔ board writer
-* ✔ moves writer
-* ✔ fen parser
-### Search engine
-* ✔ static analyzer
-* ✔ min-max
+##Roadmap
+* checkmate scoring
+* checkmate/stalemate detection
+* depth based to time based search
+* 50 move rule
+* test hash tables
+* repetition draw detection
+* handle promotions on read move
+* test finals
+###Could have
+* hash empty piece = 0
+* RNG for hash instead of abssin
+* piece list
 * get principal line
-* ✔ alpha-beta
-* sorted alpha-beta and killers
-* ✔ search handler
-* extensions
 * transposition tables
-### API
+
+
+

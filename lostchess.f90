@@ -38,6 +38,9 @@ program lostchess
   logical,parameter,dimension(0:12)::is_king = (/ .false., &
   & .false.,.false.,.false.,.false.,.false.,.true., &
   & .false.,.false.,.false.,.false.,.false.,.true. /)
+  logical,parameter,dimension(0:12)::is_pawn = (/ .false., &
+  & .true.,.false.,.false.,.false.,.false.,.false., &
+  & .true.,.false.,.false.,.false.,.false.,.false. /)
   !important tiles
   integer,parameter::ob = -1
   integer,parameter::a1 = 0
@@ -130,6 +133,7 @@ program lostchess
   !moves list
   integer,dimension(0:max_moves_per_game-1)::moves_list_ind
   type(type_move),dimension(0:max_moves_listed-1)::moves_list
+  integer,dimension(0:max_moves_listed-1)::moves_score
   
   !perft
   type type_perft
@@ -153,16 +157,16 @@ program lostchess
     integer::calling_depth
     integer::best_score
     type(type_move)::best_move
-    type(type_move),dimension(0:8)::pline_buffer
-    type(type_move),dimension(0:8)::pline
+    type(type_move),dimension(0:8)::killers
     ! statistics
     integer::nodes
+    real::t_ini
+    real::t_cur
   end type
   type(type_search)::srch1
 
   !testing variables
-  integer::selected_option
-  type(type_move)::beston
+  integer::selected_option,alpha_beta_result,nodes
   
   !init program
   call init()
@@ -170,114 +174,103 @@ program lostchess
 
   do while (.true.)
     write(*,*) 'select options -----------------------------------------------------------------'
-    write(*,*) '1 write board numbers | 7 perft | 8 test set_fen | 9 play solo | 10 search'
+    write(*,*) '1 write board numbers | 2 perft | 3 PvP | 4PvE'
     write(*,*) '--------------------------------------------------------------------------------'
     read*, selected_option
     select case (selected_option)
       case (1)
         call write_board_numbers()
-      case (7)
+      case (2)
         call perft_handler()
-      case (8)
-        call test_set_fen()
-      case (9)
+      case (3)
         do while(.true.)
-          call ask_player()
+          call player_handler()
         end do
-      case (10)
-        call search_handler1(5)
-        ! write(*,*)srch1%best_move
-        ! call test_pline()
+      case (4)
+        ! do while(.true.)
+        ! call player_handler()
+        call search_handler1(6)
+        ! nodes = 0
+        ! alpha_beta_result = alpha_beta(5,-99999999,99999999)
+        write(*,*)nodes
+        ! end do
      case default
         exit
     end select
   end do
   
   contains
-  
-  subroutine ask_player()
-    integer::m_ind = -1
-    call write_board_raw()
-    call gen_moves()
-    call write_moves()
-    write(*,*) 'write move index'
-    do while(.not.(moves_list_ind(ply) <= m_ind .and. m_ind <= moves_list_ind(ply+1)-1))
-      read*, m_ind
-    end do
-    call make_move(moves_list(m_ind))
-  end subroutine
-  
+
+!RESTART
+
   subroutine init()
     call init_hash_table()
     call init_search_const()
   end subroutine
 
   subroutine init_hash_table()
-    integer::ind,pie
-    do pie=0,12
-      do ind = 0,127
-        hash_table%board(pie,ind) = floor(abs(sin(ind+pie*128+1.)*2**30))
+    integer::sq,pie,cp_ind
+    do pie = 0,12
+      do sq = 0,127
+        hash_table%board(pie,sq) = floor(abs(sin(sq+pie*128+1.)*2**30))
       end do
     end do
     hash_table%side = floor(abs(sin(1664+1.)*2**30))
     hash_table%ep = floor(abs(sin(1665+1.)*2**30))
-    do ind = 0,15
-      hash_table%cp(ind) = floor(abs(sin(ind+1666+1.)*2**30))
+    do cp_ind = 0,15
+      hash_table%cp(cp_ind) = floor(abs(sin(cp_ind+1666+1.)*2**30))
     end do
   end subroutine
 
   subroutine restart_game()
-    call restart_board()
-    call restart_state()
-    position_hash = hash_position()
-    ply = 0
-    call restart_history()
-    call restart_move_list()
-  end subroutine
-  
-  subroutine restart_board()
+    !restart board
     board = empty
     board(a1:h1) = (/wr,wn,wb,wq,wk,wb,wn,wr/)
     board(a2:h2) = wp
     board(a7:h7) = bp
     board(a8:h8) = (/br,bn,bb,bq,bk,bb,bn,br /)
-  end subroutine
-  
-  subroutine restart_state()
+    !restart state
     state%side = team_white
     state%cp = cp_all
     state%ep = ob
-  end subroutine
-  
-  subroutine restart_history()
+    !hash board and state
+    position_hash = hash_position()
+    !restart moves done
+    ply = 0
+    !restart history
     hist%cp = cp_all
     hist%ep = ob
     hist%move = move_null
-  end subroutine
-  
-  subroutine restart_move_list()
+    !reastart list of moves
     moves_list_ind = 0
     moves_list = move_null 
   end subroutine
   
-  function hash_position()
-    integer::hash_position,ind,pie
-    hash_position = 0
-    do ind=0,127
-      if(iand(ind,136) == 0)then
-        pie = board(ind)
-        hash_position = ieor(hash_position,hash_table%board(pie,ind))
+  function hash_position() result(hash)
+    integer::hash,sq,pie
+    hash = 0
+    do sq = 0,127
+      if(iand(sq,136) == 0)then
+        pie = board(sq)
+        hash = ieor(hash,hash_table%board(pie,sq))
       end if
     end do
-    hash_position = ieor(hash_position,hash_table%side)
-    hash_position = ieor(hash_position,hash_table%ep)
-    hash_position = ieor(hash_position,hash_table%cp(state%cp))
+    hash = ieor(hash,hash_table%side)
+    hash = ieor(hash,hash_table%ep)
+    hash = ieor(hash,hash_table%cp(state%cp))
   end function
 
-  function there_is_enemy_on(fin)
+!MOVE GENERATOR
+
+  function get_row(sq) result(row)
+    integer::sq,row
+    row = ishft(sq,-4)
+  end function
+
+  function there_is_enemy_on(sq)
     logical::there_is_enemy_on
-    integer::fin
-    there_is_enemy_on = get_color(board(fin)) .eq. ieor(1,state%side)
+    integer::sq
+    there_is_enemy_on = get_color(board(sq)) .eq. ieor(1,state%side)
   end function
 
   subroutine add_move(ini,fin,is_capture,promotion_pie,is_pawnstart,is_enpassant,is_castling,captured_pie)
@@ -312,19 +305,16 @@ program lostchess
   end subroutine
   
   subroutine gen_pawn_moves(ini)
-    integer::ini,move_direction,fin,last_row_a,last_row_h,starting_row_a,starting_row_h,promotion_pie,d_ind
+    integer::ini,move_direction,fin,promotion_pie,d_ind
+    integer::last_row,start_row
     integer::promo_q,promo_r,promo_b,promo_n
     integer,dimension(0:1)::capture_directions
-    
-    if(board(ini) == empty)return
     
     if(state%side == team_white)then
       move_direction = 16
       capture_directions = (/15,17/)
-      last_row_a = a7
-      last_row_h = h7
-      starting_row_a = a2
-      starting_row_h = h2
+      last_row = 7
+      start_row = 1
       promo_q = wq
       promo_r = wr
       promo_b = wb
@@ -334,10 +324,8 @@ program lostchess
     if(state%side == team_black)then
       move_direction = -16
       capture_directions = (/-15,-17/)
-      last_row_a = a2
-      last_row_h = h2
-      starting_row_a = a7
-      starting_row_h = h7
+      last_row = 0
+      start_row = 6
       promo_q = bq
       promo_r = br
       promo_b = bb
@@ -348,7 +336,7 @@ program lostchess
       fin = ini+capture_directions(d_ind)
       if(iand(fin,136) == 0)then
         if(there_is_enemy_on(fin))then
-          if(ini >= last_row_a .and. ini <= last_row_h)then
+          if(get_row(fin) == last_row)then
             call add_move(ini,fin,.TRUE.,promo_q,.FALSE.,.FALSE.,.FALSE.,board(fin))
             call add_move(ini,fin,.TRUE.,promo_r,.FALSE.,.FALSE.,.FALSE.,board(fin))
             call add_move(ini,fin,.TRUE.,promo_b,.FALSE.,.FALSE.,.FALSE.,board(fin))
@@ -365,7 +353,7 @@ program lostchess
     fin = ini+move_direction
     if(iand(fin,136) == 0)then
       if(board(fin) == empty)then
-        if(ini >= last_row_a .and. ini <= last_row_h)then
+        if(get_row(fin) == last_row)then
           call add_move(ini,fin,.TRUE.,promo_q,.FALSE.,.FALSE.,.FALSE.,board(fin))
           call add_move(ini,fin,.TRUE.,promo_r,.FALSE.,.FALSE.,.FALSE.,board(fin))
           call add_move(ini,fin,.TRUE.,promo_b,.FALSE.,.FALSE.,.FALSE.,board(fin))
@@ -373,8 +361,8 @@ program lostchess
         else
           call add_move(ini,fin,.FALSE.,empty,.FALSE.,.FALSE.,.FALSE.,empty)
           fin = ini+2*move_direction
-          if(ini >= starting_row_a .and. ini <= starting_row_h .and. board(fin)==empty)then
-            call add_move(ini,ini+2*move_direction,.FALSE.,empty,.TRUE.,.FALSE.,.FALSE.,empty)
+          if(get_row(ini) == start_row .and. board(fin)==empty)then
+            call add_move(ini,fin,.FALSE.,empty,.TRUE.,.FALSE.,.FALSE.,empty)
           end if
         end if
       end if
@@ -421,7 +409,7 @@ program lostchess
     integer,dimension(0:7)::directions
     integer::dir,dir_ind,fin
     logical::is_slide
-    do dir_ind=0,7
+    do dir_ind = 0,7
       dir = directions(dir_ind)
       if(dir == 0) exit
       fin = ini+dir
@@ -441,48 +429,126 @@ program lostchess
   end subroutine
   
   subroutine gen_moves()
-    integer::ini,piece,piece_color,piece_type
-    do ini=0,127
+    integer::ini,pie,col
+    moves_list_ind(ply+1) = moves_list_ind(ply)
+    do ini = 0,127
       if(iand(ini,136) == 0 .and. board(ini) /= empty)then
-        piece = board(ini)
-        piece_color = get_color(piece)
-        if(piece_color == team_white .and. state%side == team_white)then
-        select case (piece)
-          case (wr)
-            call gen_common_moves(ini,directions_rook,.TRUE.)
-          case (wb)
+        pie = board(ini)
+        col = get_color(pie)
+        if(col == state%side)then
+          if(is_queen_bishop(pie))then
             call gen_common_moves(ini,directions_bishop,.TRUE.)
-          case (wq)
-            call gen_common_moves(ini,directions_rook_bishop,.TRUE.)
-          case (wk)
-            call gen_common_moves(ini,directions_rook_bishop,.FALSE.)
-          case (wn)
-            call gen_common_moves(ini,directions_knight,.FALSE.)
-          case (wp)
-            call gen_pawn_moves(ini)
-          case default         
-        end select
-        end if
-        if(piece_color == team_black .and. state%side == team_black)then
-        select case (piece)
-          case (br)
+          end if
+          if(is_queen_rook(pie))then
             call gen_common_moves(ini,directions_rook,.TRUE.)
-          case (bb)
-            call gen_common_moves(ini,directions_bishop,.TRUE.)
-          case (bq)
-            call gen_common_moves(ini,directions_rook_bishop,.TRUE.)
-          case (bk)
-            call gen_common_moves(ini,directions_rook_bishop,.FALSE.)
-          case (bn)
+          end if
+          if(is_knight(pie))then
             call gen_common_moves(ini,directions_knight,.FALSE.)
-          case (bp)
+          end if
+          if(is_king(pie))then
+            call gen_common_moves(ini,directions_rook_bishop,.FALSE.)
+          end if
+          if(is_pawn(pie))then
             call gen_pawn_moves(ini)
-          case default         
-        end select
+          end if
         end if
       end if
     end do
     call gen_castling_moves()
+  end subroutine
+  
+  subroutine gen_pawn_good(ini)
+    integer::ini,move_direction,fin,promotion_pie,d_ind
+    integer::last_row,start_row,promo_q
+    integer,dimension(0:1)::capture_directions
+    
+    if(state%side == team_white)then
+      move_direction = 16
+      capture_directions = (/15,17/)
+      last_row = 7
+      start_row = 1
+      promo_q = wq
+    end if
+    
+    if(state%side == team_black)then
+      move_direction = -16
+      capture_directions = (/-15,-17/)
+      last_row = 0
+      start_row = 6
+      promo_q = bq
+    end if
+    
+    do d_ind=0,1
+      fin = ini+capture_directions(d_ind)
+      if(iand(fin,136) == 0)then
+        if(there_is_enemy_on(fin))then
+          if(get_row(fin) == last_row)then
+            call add_move(ini,fin,.TRUE.,promo_q,.FALSE.,.FALSE.,.FALSE.,board(fin))
+          else      
+            call add_move(ini,fin,.TRUE.,empty,.FALSE.,.FALSE.,.FALSE.,board(fin))
+          end if
+        end if
+      end if
+    end do
+    fin = ini+move_direction
+    if(iand(fin,136) == 0)then
+      if(board(fin) == empty)then
+        if(get_row(fin) == last_row)then
+          call add_move(ini,fin,.TRUE.,promo_q,.FALSE.,.FALSE.,.FALSE.,board(fin))
+        end if
+      end if
+    end if
+  end subroutine
+  
+  subroutine gen_common_good(ini,directions,is_slide)
+    integer,intent(in)::ini
+    integer,dimension(0:7)::directions
+    integer::dir,dir_ind,fin
+    logical::is_slide
+    do dir_ind = 0,7
+      dir = directions(dir_ind)
+      if(dir == 0) exit
+      fin = ini+dir
+      do while (iand(fin,136) == 0)
+        if(board(fin) == empty)then
+        else if(there_is_enemy_on(fin)) then
+          call add_move(ini,fin,.TRUE.,empty,.FALSE.,.FALSE.,.FALSE.,board(fin))
+          exit
+        else
+          exit
+        end if
+        if(.not. is_slide) exit
+        fin = fin+dir
+      end do
+    end do
+  end subroutine
+  
+  subroutine gen_good_moves()
+    integer::ini,pie,col
+    moves_list_ind(ply+1) = moves_list_ind(ply)
+    do ini = 0,127
+      if(iand(ini,136) == 0 .and. board(ini) /= empty)then
+        pie = board(ini)
+        col = get_color(pie)
+        if(col == state%side)then
+          if(is_queen_bishop(pie))then
+            call gen_common_good(ini,directions_bishop,.TRUE.)
+          end if
+          if(is_queen_rook(pie))then
+            call gen_common_good(ini,directions_rook,.TRUE.)
+          end if
+          if(is_knight(pie))then
+            call gen_common_good(ini,directions_knight,.FALSE.)
+          end if
+          if(is_king(pie))then
+            call gen_common_good(ini,directions_rook_bishop,.FALSE.)
+          end if
+          if(is_pawn(pie))then
+            call gen_pawn_good(ini)
+          end if
+        end if
+      end if
+    end do
   end subroutine
   
   subroutine make_move(m)
@@ -634,9 +700,9 @@ program lostchess
 
   end subroutine
   
-  function is_attacked(tile,attacking_side)
+  function is_attacked(sq,attacking_side)
     logical::is_attacked
-    integer::tile,attacking_side
+    integer::sq,attacking_side
     integer,dimension(0:7)::directions
     integer::dir,dir_ind,fin,piece
     logical::is_slide
@@ -647,7 +713,7 @@ program lostchess
     do dir_ind = 0,7
       dir = directions(dir_ind)
       if(dir == 0) exit
-      fin = tile+dir
+      fin = sq+dir
       do while (iand(fin,136) == 0)
         piece = board(fin)
         if(piece /= empty .and. get_color(piece) == attacking_side .and. is_queen_rook(piece))then
@@ -665,7 +731,7 @@ program lostchess
     do dir_ind = 0,7
       dir = directions(dir_ind)
       if(dir == 0) exit
-      fin = tile+dir
+      fin = sq+dir
       do while (iand(fin,136) == 0)
         piece = board(fin)
         if(piece /= empty .and. get_color(piece) == attacking_side .and. is_queen_bishop(piece))then
@@ -683,7 +749,7 @@ program lostchess
     do dir_ind = 0,7
       dir = directions(dir_ind)
       if(dir == 0) exit
-      fin = tile+dir
+      fin = sq+dir
       do while (iand(fin,136) == 0)
         piece = board(fin)
         if(piece /= empty .and. get_color(piece) == attacking_side .and. is_knight(piece))then
@@ -698,7 +764,7 @@ program lostchess
     do dir_ind = 0,7
       dir = directions(dir_ind)
       if(dir == 0) exit
-      fin = tile+dir
+      fin = sq+dir
       do while (iand(fin,136) == 0)
         piece = board(fin)
         if(piece /= empty .and. get_color(piece) == attacking_side .and. is_king(piece))then
@@ -710,14 +776,14 @@ program lostchess
     end do
     
     if(attacking_side == team_white)then
-      if(board(tile-15) == wp .and. iand(tile-15,136) == 0 .or. board(tile-17) == wp .and. iand(tile-17,136) == 0)then
+      if(board(sq-15) == wp .and. iand(sq-15,136) == 0 .or. board(sq-17) == wp .and. iand(sq-17,136) == 0)then
         is_attacked = .TRUE.
           return
       end if
     end if
     
     if(attacking_side == team_black)then
-      if(board(tile+15) == bp .and. iand(tile+15,136) == 0 .or. board(tile+17) == bp .and. iand(tile+17,136) == 0)then
+      if(board(sq+15) == bp .and. iand(sq+15,136) == 0 .or. board(sq+17) == bp .and. iand(sq+17,136) == 0)then
         is_attacked = .TRUE.
           return
       end if
@@ -725,7 +791,7 @@ program lostchess
     
   end function
 
-!INPUT/OUTPUT UTILITIES--------------------------------------------------------- 
+!INPUT/OUTPUT UTILITIES
 
   subroutine mirror(board)
     integer,dimension(0:127)::board
@@ -768,6 +834,21 @@ program lostchess
     write(*,*) 'position_hash' ,position_hash
   end subroutine
   
+  subroutine write_board_pretty()
+    integer::row,sq
+    character(len=1),dimension(0:127)::board_pie
+    character(len=1),dimension(0:12):: fen_piece = (/'-','P','N','B','R','Q','K','p','n','b','r','q','k'/)
+    do sq=0,127
+      board_pie(sq) = fen_piece(board(sq))
+    end do
+    write(*,*) 'board'
+    do row=7,0,-1
+      write(*,'(A1,I1,A3,8(A4))') ' ',row+1,'  |',board_pie(16*row:16*row+7)
+    end do
+    write(*,*) '    ---------------------------------'
+    write(*,*) '       a   b   c   d   e   f   g   h'
+  end subroutine
+  
   subroutine write_board(board)
     integer,dimension(0:127)::board
     integer::row
@@ -804,13 +885,13 @@ program lostchess
   
   function move2alg(m) result(alg)
     type(type_move)::m
-    character(len=4)::alg
+    character(len=5)::alg
     alg = raw2alg(m%ini)//raw2alg(m%fin)//' '
   end function
   
   function alg2move(alg) result(m)
     type(type_move)::m
-    character(len=4)::alg
+    character(len=5)::alg
     integer::ini,fin,m_ind
     ini=alg2raw(alg(1:2))
     fin=alg2raw(alg(3:4))
@@ -842,7 +923,7 @@ program lostchess
   function get_fen()
     character(len=9*8+2+5+3+3+4)::get_fen
     integer::emptys,tile
-    character(len=1),dimension(1:12):: fen_piece = (/'P','N','B','R','Q','K','p','n','b','r','q','k'/)
+    character(len=1),dimension(0:12):: fen_piece = (/'-','P','N','B','R','Q','K','p','n','b','r','q','k'/)
     character(len=1),dimension(0:8):: fen_sq = (/ ' ','1','2','3','4','5','6','7','8' /)
     character(len=3),dimension(0:1):: fen_side = (/ ' w ',' b '/)
     character(len=4),dimension(0:15):: int2fen_cp = (/ &
@@ -957,7 +1038,7 @@ program lostchess
     
   end subroutine
   
-!TESTS -------------------------------------------------------------------------  
+!TESTS
   
   subroutine test_set_fen()
   integer,dimension(0:127)::cp_board
@@ -1063,7 +1144,6 @@ program lostchess
     write(*,*) 'perft starting position'
     call set_fen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0')     
     do depth = 1,5
-      call restart_move_list()
       call perft_restart()
       write(*,*) perft(depth),perft_starting_nodes(depth)
     end do        
@@ -1071,7 +1151,6 @@ program lostchess
     write(*,*) 'perft kiwipete'
     call set_fen('r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0')
     do depth = 1,4
-      call restart_move_list()
       call perft_restart()
       write(*,*) perft(depth),perft_kiwipete_nodes(depth)
     end do 
@@ -1079,21 +1158,18 @@ program lostchess
     write(*,*) 'perft position3'
     call set_fen('8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - 0')      
     do depth = 1,5
-      call restart_move_list()
       write(*,*) perft(depth),perft_position3_nodes(depth)
     end do 
     
     write(*,*) 'perft position4'
     call set_fen('r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0')      
     do depth = 1,5
-      call restart_move_list()
       write(*,*) perft(depth),perft_position4_nodes(depth)
     end do 
       
     write(*,*) 'perft position5'
     call set_fen('rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 0')      
     do depth = 1,4
-      call restart_move_list()
       write(*,*) perft(depth),perft_position5_nodes(depth)
     end do 
     
@@ -1101,7 +1177,39 @@ program lostchess
     write(*,*)'time: ',time_fin-time_ini !9.65
         
   end subroutine
-  
+
+  subroutine test_pline(depth)
+    type(type_move)::best_move
+    integer::depth,d_ind
+    do d_ind = depth,1
+      call search_handler1(depth)
+      write(*,*)move2alg(srch1%best_move)
+      call make_move(srch1%best_move)
+    end do
+    do d_ind = depth,1
+      call undo_last_move()
+    end do
+  end subroutine
+
+!PLAYER
+
+  subroutine player_handler()
+    integer::m_ind = -1
+    type(type_move)::m=move_null
+    character(len=5)::alg
+    call write_board_pretty()
+    call gen_moves()
+    write(*,*) 'write move in long algebraic'
+    do while(.true.)
+      read*, alg
+      m = alg2move(alg)
+      if(.not. equal_m(m,move_null))exit
+    end do
+    call make_move(m)
+  end subroutine
+
+!SEARCH ENGINE
+
   subroutine init_search_const()
     integer::p_ind
     srch1%piece_value = (/ 0,100,310,320,500,950,100000,100,310,320,500,950,100000 /)
@@ -1110,7 +1218,7 @@ program lostchess
       &  0,  0,  0,  0,  0,  0,  0,  0, 0,0,0,0,0,0,0,0, &
       & 50, 50, 50, 50, 50, 50, 50, 50, 0,0,0,0,0,0,0,0, &
       & 10, 10, 20, 30, 30, 20, 10, 10, 0,0,0,0,0,0,0,0, &
-      &  5,  5, 10, 25,325, 10,  5,  5, 0,0,0,0,0,0,0,0, &
+      &  5,  5, 10, 25, 25, 10,  5,  5, 0,0,0,0,0,0,0,0, &
       &  0,  0,  0, 20, 20,  0,  0,  0, 0,0,0,0,0,0,0,0, &
       &  5, -5,-10,  0,  0,-10, -5,  5, 0,0,0,0,0,0,0,0, &
       &  5, 10, 10,-20,-20, 10, 10,  5, 0,0,0,0,0,0,0,0, &
@@ -1119,7 +1227,7 @@ program lostchess
     srch1%piece_sq(wn,0:127) = (/ & 
       & -50,-40,-30,-30,-30,-30,-40,-50, 0,0,0,0,0,0,0,0, &
       & -40,-20,  0,  0,  0,  0,-20,-40, 0,0,0,0,0,0,0,0, &
-      & -30,  0, 10, 15, 15,110,  0,-30, 0,0,0,0,0,0,0,0, &
+      & -30,  0, 10, 15, 15, 10,  0,-30, 0,0,0,0,0,0,0,0, &
       & -30,  5, 15, 20, 20, 15,  5,-30, 0,0,0,0,0,0,0,0, &
       & -30,  0, 15, 20, 20, 15,  0,-30, 0,0,0,0,0,0,0,0, &
       & -30,  5, 10, 15, 15, 10,  5,-30, 0,0,0,0,0,0,0,0, &
@@ -1170,7 +1278,6 @@ program lostchess
     do p_ind=7,12
       call mirror(srch1%piece_sq(p_ind,0:127))
     end do
-    ! call write_piece_value()
   end subroutine
    
   function static_eval() result(white_score)
@@ -1191,116 +1298,164 @@ program lostchess
               & + srch1%ss_position(team_white) - srch1%ss_position(team_black)
     if(state%side == team_black) white_score = -white_score         
   end function
-  
-  ! recursive function min_max(depth,pline) result(best_score)
-    ! integer::depth
-    ! integer::best_score
-    ! integer::score
-    ! integer::m_ind
-    ! type(type_move)::m
-    ! type(type_move),dimension(0:8)::pline
-    ! !init
-    ! best_score = -inf
-    ! !leaf node
-    ! if(depth==srch1%calling_depth)then
-      ! best_score = static_eval()
-      ! srch1%nodes = srch1%nodes + 1
-      ! return
-    ! end if
-    ! !expand tree
-    ! call gen_moves()
-    ! do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
-      ! m = moves_list(m_ind)
-      ! pline(depth) = m
-        ! ! write(*,*)'entering branch ', &
-          ! ! & move2alg(pline(0)),move2alg(pline(1)), &
-          ! ! & move2alg(pline(2)),move2alg(pline(3))
-      ! call make_move(m)
-      ! score = -min_max(depth+1,pline)
-      ! call undo_last_move()
-      ! if(score > best_score)then
-        ! best_score = score
-        ! srch1%pline_buffer(depth) = m
-        ! srch1%pline_buffer(depth+1:srch1%calling_depth) = srch1%pline_buffer(depth+1:srch1%calling_depth)
-        ! ! write(*,*)'best_line ', &
-          ! ! & move2alg(srch1%pline_buffer(0)),move2alg(srch1%pline_buffer(1)), &
-          ! ! & move2alg(srch1%pline_buffer(2)),move2alg(srch1%pline_buffer(3)), &
-          ! ! & ' at depth ',depth, 'scoring ',best_score
-        ! if(depth == 0)then
-          ! srch1%best_move = moves_list(m_ind)
-        ! end if
-      ! end if      
-    ! end do
-  ! end function
-  
-  recursive function alpha_beta(depth,alpha,beta,pline) result(best_score)
-    integer::depth
+ 
+  function equal_m(m1,m2) result(eq)
+    type(type_move)::m1,m2
+    logical::eq 
+    eq = .false.
+    if(m1%ini == m2%ini)then
+      if(m1%fin == m2%fin)then
+        if(m1%is_capture .eqv. m2%is_capture)then
+          if(m1%promotion_pie == m2%promotion_pie)then
+            if(m1%is_pawnstart .eqv. m2%is_pawnstart)then
+              if(m1%is_enpassant .eqv. m2%is_enpassant)then
+                if(m1%is_castling .eqv. m2%is_castling)then
+                  if(m1%captured_pie == m2%captured_pie)then
+                    eq = .true. !i know, eqv operator sux
+                  end if
+                end if 
+              end if
+            end if
+          end if
+        end if
+      end if
+    end if
+  end function
+ 
+  subroutine score_moves(depth)
+    integer::m_ind,pie,captured,depth
+    type(type_move)::m
+    integer,dimension(0:12)::reward,hunter
+    
+    reward = (/ 0,1000,3100,3200,5000,9500,100000,1000,3100,3200,5000,9500,1000000 /)
+    hunter = (/ 0,-10,-31,-32,-50,-95,-100,-10,-31,-32,-50,-95,-100/)
+    
+    do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
+      m = moves_list(m_ind)
+      if(equal_m(m,srch1%best_move))then
+         moves_score(m_ind) = 100000
+      end if
+      if(equal_m(m,srch1%killers(depth)))then
+         moves_score(m_ind) = 200000
+      end if
+      if(m%ini == 1 .and. m%fin == 34)then
+         moves_score(m_ind) = 9900000
+      end if
+      moves_score(m_ind) = 0
+      if(m%is_capture)then
+        pie = board(m%ini)
+        captured = m%captured_pie
+        moves_score(m_ind) = moves_score(m_ind) + reward(captured)
+        moves_score(m_ind) = moves_score(m_ind) + hunter(pie)
+      end if
+      if(m%promotion_pie /= empty)then
+        moves_score(m_ind) = moves_score(m_ind) + reward(m%promotion_pie)
+      end if
+    end do
+  end subroutine
+
+  function select_next_best() result(best_ind)
+    integer::m_ind,best_score,best_ind
+    best_score = -inf
+    best_ind = -1
+    do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
+      if(moves_score(m_ind) > best_score)then
+        best_score = moves_score(m_ind)
+        best_ind = m_ind
+      end if
+    end do
+    moves_score(best_ind) = -inf
+  end function
+
+  recursive function alpha_beta(depth,alpha,beta) result(best_score)
+    integer::depth,v
     integer::best_score,beta,alpha
     integer::score
     integer::m_ind
     type(type_move)::m
-    type(type_move),dimension(0:8)::pline
+    !init
     best_score = alpha
+    !leaf node
     if(depth==srch1%calling_depth)then
-      best_score = static_eval()
       srch1%nodes = srch1%nodes + 1
+      ! best_score = static_eval()
+      best_score = -quies(-beta,-best_score)
       return
     end if
-    ! !expand tree
+    !expand tree
     call gen_moves()
-    do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
+    call score_moves(depth)
+    do while(.true.)
+      m_ind = select_next_best()
+      if(m_ind == -1) exit
+    ! do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
       m = moves_list(m_ind)
-      pline(depth) = m
+      ! write(*,*)m
       call make_move(m)
-        score = -alpha_beta(depth+1,-beta,-alpha,pline)
+      v = -alpha_beta(depth+1,-beta,-best_score)
       call undo_last_move()
-      if(score >= beta)then
+      if(v >= beta)then
         best_score = beta
+        srch1%killers(depth) = m
         return
       end if
-      if(score > best_score)then
-        best_score = score
-        srch1%pline_buffer(depth) = m
-        srch1%pline_buffer(depth+1:srch1%calling_depth) = srch1%pline_buffer(depth+1:srch1%calling_depth)
+      if(v > best_score)then
+        best_score = v
         if(depth == 0)then
           srch1%best_move = moves_list(m_ind)
         end if
-      end if      
+      end if
+    end do
+  end function
+  
+  recursive function quies(alpha,beta) result(best_score)
+    integer::alpha,beta,best_score,v,m_ind
+    type(type_move)::m
+    best_score = alpha
+    v = static_eval()
+    if(v >= beta)then
+      best_score = beta
+      return
+    end if
+    if(v > best_score)then
+      best_score = v
+    end if
+    call gen_good_moves()
+    call score_moves(0)!cant depend on depth
+    do while(.true.)
+      m_ind = select_next_best()
+      if(m_ind == -1) exit
+      m = moves_list(m_ind)
+      call make_move(m)
+      v = -quies(-beta,-best_score)
+      call undo_last_move()
+      if(v >= beta)then
+        best_score = beta
+        return
+      end if
+      if(v > best_score)then
+        best_score = v
+      end if
     end do
   end function
   
   subroutine search_handler1(depth)
-    integer::depth
-    !init
-    srch1%pline_buffer = move_null
-    srch1%pline = move_null
-    srch1%best_score = -inf
-    srch1%best_move = move_null
-    srch1%calling_depth = depth
-    srch1%nodes = 0
-    !call tree
-    srch1%best_score = alpha_beta(0,-inf,inf,srch1%pline)
-    ! write results
-    write(*,*)'best_move ',move2alg(srch1%best_move)
-    write(*,*)'best_score ',srch1%best_score
-    write(*,*)'best_line ', &
-      & move2alg(srch1%pline_buffer(0)),move2alg(srch1%pline_buffer(1)), &
-      & move2alg(srch1%pline_buffer(2)),move2alg(srch1%pline_buffer(3))
-    write(*,*)'nodes ',srch1%nodes
-  end subroutine
-  
-  subroutine test_pline
-    ! type(type_move),dimension(0:8)::auto_pline,step_plinek
-    type(type_move)::best_move
-    call search_handler1(3)
-    write(*,*)move2alg(srch1%best_move)
-    call make_move(srch1%best_move)
-    call search_handler1(2)
-    write(*,*)move2alg(srch1%best_move)
-    call make_move(srch1%best_move)
-    call search_handler1(1)
-    write(*,*)move2alg(srch1%best_move)
-    call make_move(srch1%best_move)
+    integer::depth,iter_depth
+    !iterate depth
+    do iter_depth = 1,depth
+      !init
+      srch1%nodes = 0
+      srch1%best_score = -inf
+      ! srch1%best_move = move_null
+      srch1%calling_depth = iter_depth
+      !alpha beta
+      call cpu_time(srch1%t_ini)
+      srch1%best_score = alpha_beta(0,-inf,inf)
+      call cpu_time(srch1%t_cur)
+      !write results
+      write(*,*)'depth ',iter_depth,'best_move ',move2alg(srch1%best_move),'best_score ',srch1%best_score, &
+        & 'nodes ',srch1%nodes,'time ',srch1%t_cur-srch1%t_ini
+    end do
   end subroutine
   
   end program lostchess
