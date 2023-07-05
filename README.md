@@ -10,12 +10,8 @@ start lostchess.exe
 Or download the lostchess.exe for 64bits Windows
 
 ##Roadmap
-* checkmate scoring
-* checkmate/stalemate detection
 * depth based to time based search
-* 50 move rule on fen
 * test hash tables
-* repetition draw detection
 * handle promotions on read move
 * test finals
 ###Could have
@@ -24,6 +20,7 @@ Or download the lostchess.exe for 64bits Windows
 * piece list
 * get principal line
 * transposition tables
+* 50 move rule on fen
 
 
 

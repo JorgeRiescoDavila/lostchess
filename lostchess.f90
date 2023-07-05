@@ -176,7 +176,7 @@ program lostchess
 
   do while (.true.)
     write(*,*) 'select options -----------------------------------------------------------------'
-    write(*,*) '1 write board numbers | 2 perft | 3 PvP | 4PvE'
+    write(*,*) '1 write board numbers | 2 perft | 3 PvP | 4PvE | 5 mate in 3'
     write(*,*) '--------------------------------------------------------------------------------'
     read*, selected_option
     select case (selected_option)
@@ -191,11 +191,13 @@ program lostchess
       case (4)
         ! do while(.true.)
         ! call player_handler()
-        call search_handler1(6)
+        call search_handler1(5)
         ! nodes = 0
         ! alpha_beta_result = alpha_beta(5,-99999999,99999999)
         write(*,*)nodes
         ! end do
+      case(5)
+        call test_mate3()
      case default
         exit
     end select
@@ -1199,6 +1201,14 @@ program lostchess
     end do
   end subroutine
 
+  subroutine test_mate3()
+    call restart_game()
+    call set_fen('8/8/8/8/1R6/1K6/8/1k6 w - - 0 1')
+    call write_board_raw()
+    write(*,*)'solution is b4c4'
+    call search_handler1(4)
+  end subroutine
+
 !PLAYER
 
   subroutine player_handler()
@@ -1379,19 +1389,44 @@ program lostchess
     integer::depth,v
     integer::best_score,beta,alpha
     integer::score
-    integer::m_ind
+    integer::m_ind,king_ind,rule50_ind
     type(type_move)::m
     !init
     best_score = alpha
+    !check end
+    if(state%rule50 == 100)then
+      best_score = 0
+      return
+    end if
+    do rule50_ind = 0,state%rule50
+      if(hist(ply-rule50_ind)%hash == position_hash)then
+        best_score = 0
+        return
+      end if
+    end do
     !leaf node
     if(depth==srch1%calling_depth)then
       srch1%nodes = srch1%nodes + 1
-      ! best_score = static_eval()
-      best_score = -quies(-beta,-best_score)
+      best_score = static_eval()
+      ! best_score = -quies(-beta,-best_score)
       return
     end if
     !expand tree
     call gen_moves()
+    !game ends
+    if(moves_list_ind(ply) == moves_list_ind(ply+1)-1)then
+      do king_ind = 0,127
+        if(is_king(board(king_ind)) .and. get_color(board(king_ind)) == state%side)then
+          exit
+        end if
+      end do
+      if(is_attacked(king_ind,ieor(1,state%side)))then
+        best_score = -1000000+depth
+      else
+        best_score = 0
+      end if
+      return
+    end if
     call score_moves(depth)
     do while(.true.)
       m_ind = select_next_best()
