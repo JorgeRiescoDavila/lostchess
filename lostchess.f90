@@ -112,6 +112,7 @@ program lostchess
     integer::side
     integer::ep
     integer::cp
+    integer::rule50
   end type
   type(type_state)::state
 
@@ -125,6 +126,7 @@ program lostchess
   type type_history
     integer::cp
     integer::ep
+    integer::rule50
     integer::hash
     type(type_move)::move
   end type
@@ -233,6 +235,7 @@ program lostchess
     state%side = team_white
     state%cp = cp_all
     state%ep = ob
+    state%rule50 = 0
     !hash board and state
     position_hash = hash_position()
     !restart moves done
@@ -240,6 +243,7 @@ program lostchess
     !restart history
     hist%cp = cp_all
     hist%ep = ob
+    hist%rule50 = 0
     hist%move = move_null
     !reastart list of moves
     moves_list_ind = 0
@@ -556,8 +560,12 @@ program lostchess
     
     hist(ply)%cp = state%cp
     hist(ply)%ep = state%ep
+    hist(ply)%rule50 = state%rule50
     hist(ply)%hash = position_hash
     hist(ply)%move = m
+    
+    if(m%is_capture) state%rule50 = 0
+    if(is_pawn(board(m%ini))) state%rule50 = 0
     
     position_hash = ieor(position_hash,hash_table%cp(state%cp))
     state%cp = iand(state%cp,cp_table(m%ini))
@@ -583,7 +591,6 @@ program lostchess
       state%ep = ob
     end if
     position_hash = ieor(position_hash,hash_table%ep)
-    
     
     if(m%is_enpassant)then
       if(state%side == team_white)then
@@ -652,6 +659,7 @@ program lostchess
     m = hist(ply)%move
     state%cp = hist(ply)%cp
     state%ep = hist(ply)%ep
+    state%rule50 = hist(ply)%rule50
     position_hash = hist(ply)%hash
     ! write(*,*)'undo',m
     state%side = ieor(1,state%side)

@@ -13,7 +13,7 @@ Or download the lostchess.exe for 64bits Windows
 * checkmate scoring
 * checkmate/stalemate detection
 * depth based to time based search
-* 50 move rule
+* 50 move rule on fen
 * test hash tables
 * repetition draw detection
 * handle promotions on read move
