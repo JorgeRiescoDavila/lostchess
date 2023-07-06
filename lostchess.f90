@@ -142,18 +142,7 @@ program lostchess
   type type_piece_list
     integer,dimension(0:1)::kings
   end type
-  type(type_piece_list)::piece_list
-  
-  !perft
-  type type_perft
-    integer::node
-    integer::capture
-    integer::enpassant
-    integer::castle
-    integer::promotion
-    integer::check
-  end type
-  type(type_perft)::perft_results
+  type(type_piece_list)::piece_list 
   
   !search engine
   type type_search
@@ -181,6 +170,8 @@ program lostchess
   call init()
   call restart_game()
 
+
+
   do while (.true.)
     write(*,*) 'select options -----------------------------------------------------------------'
     write(*,*) '1 PVP | 2 PVE | 3 PerfTest'
@@ -200,7 +191,7 @@ program lostchess
       case (2)
         call restart_game()      
         do while(.true.)
-          call search_handler1(6)
+          call search_handler1(5)
           call make_move(srch1%best_move)
           winner = check_end()
           if(winner /= team_none)then
@@ -311,11 +302,7 @@ program lostchess
     call gen_moves()
     ! call write_moves()
     if(moves_list_ind(ply) == moves_list_ind(ply+1))then
-      do king_ind = 0,127
-        if(is_king(board(king_ind)) .and. get_color(board(king_ind)) == state%side)then
-          exit
-        end if
-      end do
+      king_ind = piece_list%kings(state%side)
       if(is_attacked(king_ind,ieor(1,state%side)))then
         winner = ieor(1,state%side)
         return
@@ -354,11 +341,6 @@ program lostchess
     m%captured_pie = captured_pie
     
     call make_move(m)
-    ! do king_ind = 0,127
-      ! if(is_king(board(king_ind)) .and. get_color(board(king_ind)) == ieor(1,state%side))then
-        ! exit
-      ! end if
-    ! end do
     king_ind = piece_list%kings(ieor(1,state%side))
     if(.not. is_attacked(king_ind,state%side))then
       is_legal =.true.
@@ -1201,37 +1183,20 @@ program lostchess
   
   end subroutine
   
-  recursive function perft(depth) result(res)
-    integer::res
-    integer::depth,cnt,m_ind
-    type(type_move)::m
-
-    cnt = 0
+  recursive function perft(depth) result(nodes)
+    integer::nodes,depth,m_ind
+    nodes = 0
     if(depth == 0) then
-      res = 1
-      ! m=hist(ply-1)%move
-      ! if(m%is_capture) perft_results%capture = perft_results%capture + 1
-      ! if(m%is_castling) perft_results%castle = perft_results%castle + 1
-      ! if(m%is_enpassant) perft_results%enpassant = perft_results%enpassant + 1
-      ! if(m%promotion_pie /= empty) perft_results%promotion = perft_results%promotion + 1
+      nodes = 1
       return
     end if
-
     call gen_moves()
     do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
       call make_move(moves_list(m_ind))
-      cnt = cnt + perft(depth-1)
+      nodes = nodes + perft(depth-1)
       call undo_last_move()
     end do
-    res = cnt
   end function
-  
-  subroutine perft_restart()
-    perft_results%capture = 0
-    perft_results%enpassant = 0
-    perft_results%castle = 0
-    perft_results%promotion = 0
-  end subroutine
   
   subroutine perft_handler
     integer::depth
@@ -1247,14 +1212,12 @@ program lostchess
     write(*,*) 'perft starting position'
     call set_fen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0')     
     do depth = 1,5
-      call perft_restart()
       write(*,*) perft(depth),perft_starting_nodes(depth)
     end do        
         
     write(*,*) 'perft kiwipete'
     call set_fen('r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0')
     do depth = 1,4
-      call perft_restart()
       write(*,*) perft(depth),perft_kiwipete_nodes(depth)
     end do 
     
@@ -1277,29 +1240,8 @@ program lostchess
     end do 
     
     call cpu_time(time_fin)
-    write(*,*)'time: ',time_fin-time_ini !9.65
+    write(*,*)'time: ',time_fin-time_ini
         
-  end subroutine
-
-  subroutine test_pline(depth)
-    type(type_move)::best_move
-    integer::depth,d_ind
-    do d_ind = depth,1
-      call search_handler1(depth)
-      write(*,*)move2alg(srch1%best_move)
-      call make_move(srch1%best_move)
-    end do
-    do d_ind = depth,1
-      call undo_last_move()
-    end do
-  end subroutine
-
-  subroutine test_mate3()
-    call restart_game()
-    call set_fen('8/8/8/8/1R6/1K6/8/1k6 w - - 0 1')
-    call write_board_raw()
-    write(*,*)'solution is b4c4'
-    call search_handler1(4)
   end subroutine
 
 !PLAYER
@@ -1433,8 +1375,8 @@ program lostchess
     end if
   end function
  
-  subroutine score_moves(depth)
-    integer::m_ind,pie,captured,depth
+  subroutine score_moves()
+    integer::m_ind,pie,captured
     type(type_move)::m
     integer,dimension(0:12)::reward,hunter
     
@@ -1442,17 +1384,14 @@ program lostchess
     hunter = (/ 0,-10,-31,-32,-50,-95,-100,-10,-31,-32,-50,-95,-100/)
     
     do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
-      m = moves_list(m_ind)
-      if(equal_m(m,srch1%best_move))then
-         moves_score(m_ind) = 100000
-      end if
-      if(equal_m(m,srch1%killers(depth)))then
-         moves_score(m_ind) = 200000
-      end if
-      if(m%ini == 1 .and. m%fin == 34)then
-         moves_score(m_ind) = 9900000
-      end if
       moves_score(m_ind) = 0
+      m = moves_list(m_ind)
+      ! if(equal_m(m,srch1%best_move))then
+         ! moves_score(m_ind) = 100000
+      ! end if
+      ! if(equal_m(m,srch1%killers(depth)))then
+         ! moves_score(m_ind) = 200000
+      ! end if
       if(m%is_capture)then
         pie = board(m%ini)
         captured = m%captured_pie
@@ -1465,28 +1404,14 @@ program lostchess
     end do
   end subroutine
 
-  function select_next_best() result(best_ind)
-    integer::m_ind,best_score,best_ind
-    best_score = -inf
-    best_ind = -1
-    do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
-      if(moves_score(m_ind) > best_score)then
-        best_score = moves_score(m_ind)
-        best_ind = m_ind
-      end if
-    end do
-    moves_score(best_ind) = -inf
-  end function
-
   recursive function alpha_beta(depth,alpha,beta) result(best_score)
     integer::depth,v
     integer::best_score,beta,alpha
     integer::score
     integer::m_ind,king_ind,rule50_ind
     type(type_move)::m
-    !init
-    best_score = alpha
-    ! !check end
+    integer::best_ind,best_score_move
+    !return due to game end
     if(state%rule50 == 100)then
       best_score = 0
       return
@@ -1497,22 +1422,9 @@ program lostchess
         return
       end if
     end do
-    !leaf node
-    if(depth==srch1%calling_depth)then
-      srch1%nodes = srch1%nodes + 1
-      best_score = static_eval()
-      ! best_score = -quies(-beta,-best_score)
-      return
-    end if
-    ! !expand tree
     call gen_moves()
-    ! !game ends
     if(moves_list_ind(ply) == moves_list_ind(ply+1))then
-      do king_ind = 0,127
-        if(is_king(board(king_ind)) .and. get_color(board(king_ind)) == state%side)then
-          exit
-        end if
-      end do
+      king_ind = piece_list%kings(state%side)
       if(is_attacked(king_ind,ieor(1,state%side)))then
         best_score = -1000000+depth
       else
@@ -1520,14 +1432,37 @@ program lostchess
       end if
       return
     end if
-    ! call score_moves(depth)
-    ! do while(.true.)
-      ! m_ind = select_next_best()
-      ! m = moves_list(m_ind)
-      ! if(m_ind == -1) exit
-    do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
+    !static eval
+    if(depth==srch1%calling_depth)then
+      srch1%nodes = srch1%nodes + 1
+      best_score = static_eval()
+      ! best_score = -quies(-beta,-best_score)
+      return
+    end if
+    !start alpha_beta
+    best_score = alpha
+    !score moves for sort
+    call score_moves()
+    do while(.true.)
+      !select best move
+      best_score_move = -inf
+      best_ind = -1
+      do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
+        if(moves_score(m_ind) > best_score_move)then
+          best_score_move = moves_score(m_ind)
+          best_ind = m_ind
+          if(m_ind >= 0)then
+            moves_score(m_ind) = -inf
+          else
+            write(*,*)'trying to acces move_score with negative index'
+          end if
+          ! exit
+        end if
+      end do
+      m_ind = best_ind
+    
+      if(m_ind == -1) exit
       m = moves_list(m_ind)
-      ! ! write(*,*)m
       call make_move(m)
       v = -alpha_beta(depth+1,-beta,-best_score)
       call undo_last_move()
@@ -1539,7 +1474,7 @@ program lostchess
       if(v > best_score)then
         best_score = v
         if(depth == 0)then
-          srch1%best_move = moves_list(m_ind)
+          srch1%best_move = m
         end if
       end if
     end do
@@ -1558,9 +1493,9 @@ program lostchess
       best_score = v
     end if
     call gen_good_moves()
-    call score_moves(0)!cant depend on depth
+    ! call score_moves(0)!cant depend on depth
     do while(.true.)
-      m_ind = select_next_best()
+      ! m_ind = select_next_best()
       if(m_ind == -1) exit
       m = moves_list(m_ind)
       call make_move(m)
