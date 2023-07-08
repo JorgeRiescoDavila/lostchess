@@ -1,7 +1,6 @@
 
 program lostchess
   implicit none
-  integer,parameter::inf=2**20
   integer,parameter::max_moves_per_game = 1024
   integer,parameter::max_moves_listed = 8192
   !side to move codes
@@ -65,10 +64,10 @@ program lostchess
   integer,parameter::g8 = 118
   integer,parameter::h8 = 119
   !castling permissions
-  integer,parameter::cp_wq = 2
   integer,parameter::cp_wk = 1
-  integer,parameter::cp_bq = 8
+  integer,parameter::cp_wq = 2
   integer,parameter::cp_bk = 4
+  integer,parameter::cp_bq = 8
   integer,parameter::cp_all = cp_wq+cp_wk+cp_bq+cp_bk
   integer,parameter,dimension(0:127)::cp_table = (/ &
   & cp_all-cp_wq,cp_all,cp_all,cp_all,cp_all-cp_wq-cp_wk,cp_all,cp_all,cp_all-cp_wk,0,0,0,0,0,0,0,0, &
@@ -145,6 +144,10 @@ program lostchess
   type(type_piece_list)::piece_list 
   
   !search engine
+  integer,parameter::inf = 2**30
+  integer,parameter::mate_score = 1000000
+  integer,parameter::ulti_depth = 32
+  !search engine
   type type_search
     !constants
     integer,dimension(0:12,0:127)::piece_sq
@@ -155,13 +158,14 @@ program lostchess
     integer::calling_depth
     integer::best_score
     type(type_move)::best_move
-    type(type_move),dimension(0:8)::killers
+    type(type_move),dimension(0:1,0:ulti_depth)::killers
     ! statistics
     integer::nodes
     real::t_ini
     real::t_cur
   end type
-  type(type_search)::srch1
+  type(type_search)::srch
+  integer::ply_depth
 
   !testing variables
   integer::selected_option,winner
@@ -191,8 +195,8 @@ program lostchess
       case (2)
         call restart_game()      
         do while(.true.)
-          call search_handler1(5)
-          call make_move(srch1%best_move)
+          call search_handler1(6)
+          call make_move(srch%best_move)
           winner = check_end()
           if(winner /= team_none)then
             write(*,*)'WINNER ',winner
@@ -990,7 +994,7 @@ program lostchess
     integer::pie
     do pie=1,12
       write(*,*)pie
-      call write_board(srch1%piece_sq(pie,0:127))
+      call write_board(srch%piece_sq(pie,0:127))
     end do
   end subroutine
   
@@ -1265,9 +1269,9 @@ program lostchess
 
   subroutine init_search_const()
     integer::p_ind
-    srch1%piece_value = (/ 0,100,310,320,500,950,100000,100,310,320,500,950,100000 /)
+    srch%piece_value = (/ 0,100,310,320,500,950,100000,100,310,320,500,950,100000 /)
   
-    srch1%piece_sq(wp,0:127) = (/ & 
+    srch%piece_sq(wp,0:127) = (/ & 
       &  0,  0,  0,  0,  0,  0,  0,  0, 0,0,0,0,0,0,0,0, &
       & 50, 50, 50, 50, 50, 50, 50, 50, 0,0,0,0,0,0,0,0, &
       & 10, 10, 20, 30, 30, 20, 10, 10, 0,0,0,0,0,0,0,0, &
@@ -1277,7 +1281,7 @@ program lostchess
       &  5, 10, 10,-20,-20, 10, 10,  5, 0,0,0,0,0,0,0,0, &
       &  0,  0,  0,  0,  0,  0,  0,  0, 0,0,0,0,0,0,0,0 /)
       
-    srch1%piece_sq(wn,0:127) = (/ & 
+    srch%piece_sq(wn,0:127) = (/ & 
       & -50,-40,-30,-30,-30,-30,-40,-50, 0,0,0,0,0,0,0,0, &
       & -40,-20,  0,  0,  0,  0,-20,-40, 0,0,0,0,0,0,0,0, &
       & -30,  0, 10, 15, 15, 10,  0,-30, 0,0,0,0,0,0,0,0, &
@@ -1287,7 +1291,7 @@ program lostchess
       & -40,-20,  0,  5,  5,  0,-20,-40, 0,0,0,0,0,0,0,0, &
       & -50,-40,-30,-30,-30,-30,-40,-50, 0,0,0,0,0,0,0,0 /)
       
-    srch1%piece_sq(wb,0:127) = (/ & 
+    srch%piece_sq(wb,0:127) = (/ & 
       &  -20,-10,-10,-10,-10,-10,-10,-20, 0,0,0,0,0,0,0,0, &
       &  -10,  0,  0,  0,  0,  0,  0,-10, 0,0,0,0,0,0,0,0, &
       &  -10,  0,  5, 10, 10,  5,  0,-10, 0,0,0,0,0,0,0,0, &
@@ -1297,7 +1301,7 @@ program lostchess
       &  -10,  5,  0,  0,  0,  0,  5,-10, 0,0,0,0,0,0,0,0, &
       &  -20,-10,-10,-10,-10,-10,-10,-20, 0,0,0,0,0,0,0,0 /)
 
-    srch1%piece_sq(wr,0:127) = (/ & 
+    srch%piece_sq(wr,0:127) = (/ & 
       &  0,  0,  0,  0,  0,  0,  0,  0, 0,0,0,0,0,0,0,0, &
       &  5, 10, 10, 10, 10, 10, 10,  5, 0,0,0,0,0,0,0,0, &
       & -5,  0,  0,  0,  0,  0,  0, -5, 0,0,0,0,0,0,0,0, &
@@ -1307,7 +1311,7 @@ program lostchess
       & -5,  0,  0,  0,  0,  0,  0, -5, 0,0,0,0,0,0,0,0, &
       &  0,  0,  0,  5,  5,  0,  0,  0,  0,0,0,0,0,0,0,0 /)
       
-    srch1%piece_sq(wq,0:127) = (/ & 
+    srch%piece_sq(wq,0:127) = (/ & 
       &  -20,-10,-10, -5, -5,-10,-10,-20, 0,0,0,0,0,0,0,0, &
       &  -10,  0,  0,  0,  0,  0,  0,-10, 0,0,0,0,0,0,0,0, &
       &  -10,  0,  5,  5,  5,  5,  0,-10, 0,0,0,0,0,0,0,0, &
@@ -1317,7 +1321,7 @@ program lostchess
       &  -10,  0,  5,  0,  0,  0,  0,-10, 0,0,0,0,0,0,0,0, &
       &  -20,-10,-10, -5, -5,-10,-10,-20,  0,0,0,0,0,0,0,0 /)
 
-    srch1%piece_sq(wk,0:127) = (/ & 
+    srch%piece_sq(wk,0:127) = (/ & 
       &  -30,-40,-40,-50,-50,-40,-40,-30, 0,0,0,0,0,0,0,0, &
       &  -30,-40,-40,-50,-50,-40,-40,-30, 0,0,0,0,0,0,0,0, &
       &  -30,-40,-40,-50,-50,-40,-40,-30, 0,0,0,0,0,0,0,0, &
@@ -1327,28 +1331,28 @@ program lostchess
       &   20, 20,  0,  0,  0,  0, 20, 20, 0,0,0,0,0,0,0,0, &
       &   20, 30, 10,  0,  0, 10, 30, 20,  0,0,0,0,0,0,0,0 /)
       
-    srch1%piece_sq(7:12,0:127) = srch1%piece_sq(1:6,0:127)
+    srch%piece_sq(7:12,0:127) = srch%piece_sq(1:6,0:127)
     do p_ind=7,12
-      call mirror(srch1%piece_sq(p_ind,0:127))
+      call mirror(srch%piece_sq(p_ind,0:127))
     end do
   end subroutine
    
   function static_eval() result(white_score)
     integer::white_score,sq,pie,col
-    srch1%ss_material = 0
-    srch1%ss_position = 0
+    srch%ss_material = 0
+    srch%ss_position = 0
     do sq = 0,127
       if(iand(sq,136) == 0)then
         pie = board(sq)
         if(pie /= empty)then
           col = get_color(pie)
-          srch1%ss_material(col) = srch1%ss_material(col) + srch1%piece_value(pie)
-          srch1%ss_position(col) = srch1%ss_position(col) + srch1%piece_sq(pie,sq)
+          srch%ss_material(col) = srch%ss_material(col) + srch%piece_value(pie)
+          srch%ss_position(col) = srch%ss_position(col) + srch%piece_sq(pie,sq)
         end if
       end if
     end do
-    white_score = srch1%ss_material(team_white) - srch1%ss_material(team_black) &
-              & + srch1%ss_position(team_white) - srch1%ss_position(team_black)
+    white_score = srch%ss_material(team_white) - srch%ss_material(team_black) &
+              & + srch%ss_position(team_white) - srch%ss_position(team_black)
     if(state%side == team_black) white_score = -white_score         
   end function
  
@@ -1386,12 +1390,12 @@ program lostchess
     do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
       moves_score(m_ind) = 0
       m = moves_list(m_ind)
-      ! if(equal_m(m,srch1%best_move))then
-         ! moves_score(m_ind) = 100000
-      ! end if
-      ! if(equal_m(m,srch1%killers(depth)))then
-         ! moves_score(m_ind) = 200000
-      ! end if
+      if(equal_m(m,srch%killers(1,ply_depth)))then
+         moves_score(m_ind) = 100
+      end if
+      if(equal_m(m,srch%killers(0,ply_depth)))then
+         moves_score(m_ind) = 200
+      end if
       if(m%is_capture)then
         pie = board(m%ini)
         captured = m%captured_pie
@@ -1426,17 +1430,17 @@ program lostchess
     if(moves_list_ind(ply) == moves_list_ind(ply+1))then
       king_ind = piece_list%kings(state%side)
       if(is_attacked(king_ind,ieor(1,state%side)))then
-        best_score = -1000000+depth
+        best_score = -mate_score+depth
       else
         best_score = 0
       end if
       return
     end if
     !static eval
-    if(depth==srch1%calling_depth)then
-      srch1%nodes = srch1%nodes + 1
+    if(depth==srch%calling_depth)then
+      srch%nodes = srch%nodes + 1
       best_score = static_eval()
-      ! best_score = -quies(-beta,-best_score)
+      best_score = quies(best_score,beta)
       return
     end if
     !start alpha_beta
@@ -1456,7 +1460,6 @@ program lostchess
           else
             write(*,*)'trying to acces move_score with negative index'
           end if
-          ! exit
         end if
       end do
       m_ind = best_ind
@@ -1464,51 +1467,76 @@ program lostchess
       if(m_ind == -1) exit
       m = moves_list(m_ind)
       call make_move(m)
+      ply_depth = ply_depth+1
       v = -alpha_beta(depth+1,-beta,-best_score)
       call undo_last_move()
+      ply_depth = ply_depth-1
       if(v >= beta)then
         best_score = beta
-        ! srch1%killers(depth) = m
+          srch%killers(1,ply_depth) = srch%killers(0,ply_depth)
+          srch%killers(0,ply_depth) = m
         return
       end if
       if(v > best_score)then
         best_score = v
         if(depth == 0)then
-          srch1%best_move = m
+          srch%best_move = m
         end if
       end if
     end do
   end function
   
-  recursive function quies(alpha,beta) result(best_score)
-    integer::alpha,beta,best_score,v,m_ind
+  recursive function quies(alpha_in,beta) result(alpha)
+    integer::alpha_in,beta,alpha,v,m_ind,best_ind,best_score_move
     type(type_move)::m
-    best_score = alpha
+    alpha = alpha_in
     v = static_eval()
     if(v >= beta)then
-      best_score = beta
+      alpha = beta
       return
     end if
-    if(v > best_score)then
-      best_score = v
+    if(v > alpha)then
+      alpha = v
     end if
     call gen_good_moves()
-    ! call score_moves(0)!cant depend on depth
+    if(moves_list_ind(ply) /= moves_list_ind(ply+1))then
+      ! alpha = v
+      ! return
+    ! end if
+    call score_moves()
     do while(.true.)
-      ! m_ind = select_next_best()
+      !select best move
+      best_score_move = -inf
+      best_ind = -1
+      do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
+        if(moves_score(m_ind) > best_score_move)then
+          best_score_move = moves_score(m_ind)
+          best_ind = m_ind
+          if(m_ind >= 0)then
+            moves_score(m_ind) = -inf
+          else
+            write(*,*)'trying to acces move_score with negative index'
+          end if
+        end if
+      end do
+      m_ind = best_ind
+      
       if(m_ind == -1) exit
       m = moves_list(m_ind)
       call make_move(m)
-      v = -quies(-beta,-best_score)
+      v = -quies(-beta,-alpha)
       call undo_last_move()
       if(v >= beta)then
-        best_score = beta
+        alpha = beta
         return
       end if
-      if(v > best_score)then
-        best_score = v
+      if(v > alpha)then
+        alpha = v
       end if
     end do
+    else
+    ! alpha = v
+    end if
   end function
   
   subroutine search_handler1(depth)
@@ -1516,17 +1544,18 @@ program lostchess
     !iterate depth
     do iter_depth = 1,depth
       !init
-      srch1%nodes = 0
-      srch1%best_score = -inf
-      ! srch1%best_move = move_null
-      srch1%calling_depth = iter_depth
+      srch%nodes = 0
+      srch%best_score = -inf
+      ! srch%best_move = move_null
+      srch%calling_depth = iter_depth
       !alpha beta
-      call cpu_time(srch1%t_ini)
-      srch1%best_score = alpha_beta(0,-inf,inf)
-      call cpu_time(srch1%t_cur)
+      call cpu_time(srch%t_ini)
+      ply_depth = 0
+      srch%best_score = alpha_beta(0,-inf,inf)
+      call cpu_time(srch%t_cur)
       !write results
-      write(*,*)'depth ',iter_depth,'best_move ',move2alg(srch1%best_move),'best_score ',srch1%best_score, &
-        & 'nodes ',srch1%nodes,'time ',srch1%t_cur-srch1%t_ini
+      write(*,*)'depth ',iter_depth,'best_move ',move2alg(srch%best_move),'best_score ',srch%best_score, &
+        & 'nodes ',srch%nodes,'time ',srch%t_cur-srch%t_ini
     end do
   end subroutine
   
