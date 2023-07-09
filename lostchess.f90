@@ -84,8 +84,6 @@ program lostchess
   integer,dimension(0:7),parameter::directions_rook_bishop = (/  1, 16, -1,-16, 15, 17,-15,-17/)
   integer,dimension(0:7),parameter::directions_knight      = (/ 14, 18, 31, 33,-14,-18,-31,-33/)
   
-  
-  
   type type_move
     integer::ini
     integer::fin
@@ -169,6 +167,7 @@ program lostchess
   type(type_search)::srch
   integer::ply_depth
 
+  !transposition table
   integer,parameter::TT_size = 2**10
   integer,dimension(0:TT_size-1,0:2)::TT
 
@@ -197,7 +196,7 @@ program lostchess
       case (2)
         call restart_game()      
         do while(.true.)
-          call search_handler1(6)
+          call search_handler(6)
           call make_move(srch%best_move)
           winner = check_end()
           if(winner /= team_none)then
@@ -286,6 +285,29 @@ program lostchess
     hash = ieor(hash,hash_table%ep(state%ep))
     hash = ieor(hash,hash_table%cp(state%cp))
   end function
+
+!PLAYER
+
+  subroutine player_handler()
+    integer::king_sq
+    type(type_move)::m=move_null
+    character(len=5)::alg
+    call write_board_pretty()
+    call gen_moves()
+    write(*,*) 'write move in long algebraic'
+    do while(.true.)
+      read*, alg
+      m = alg2move(alg)
+      if(.not. equal_m(m,move_null))then
+        call make_move(m)
+          king_sq = piece_list%kings(ieor(1,state%side))
+          if(.not. is_attacked(king_sq,state%side))then
+            exit
+          end if
+        call undo_last_move()
+      end if
+    end do
+  end subroutine
 
 !END
 
@@ -1004,49 +1026,82 @@ program lostchess
     end do
   end subroutine
   
-  function get_fen()
-    character(len=9*8+2+5+3+3+4)::get_fen
-    integer::emptys,tile
+  function get_fen() result(fen)
+    character(len=100)::fen
+    integer::emptys,sq,row,col
     character(len=1),dimension(0:12):: fen_piece = (/'-','P','N','B','R','Q','K','p','n','b','r','q','k'/)
     character(len=1),dimension(0:8):: fen_sq = (/ ' ','1','2','3','4','5','6','7','8' /)
-    character(len=3),dimension(0:1):: fen_side = (/ ' w ',' b '/)
-    character(len=4),dimension(0:15):: int2fen_cp = (/ &
-    &'    ','K   ',' Q  ','KQ  ','  k ','K k ',' Qk ','KQk ','   q','K  q',' Q q','KQ q','  kq','K kq',' Qkq','KQkq' /)
-    get_fen = ''
+    character(len=3),dimension(0:1):: fen_side = (/ 'w','b'/)
+    character(len=4)::fen_cp
+    character(len=12)::fen_rule50,fen_ply !has to be len=12 to cast the integer here
+    fen = ''
     !fen board
     emptys = 0
-    do tile=0,119
-      if(iand(tile,136) == 0)then
-        if(board(tile) == empty)then
-          emptys = emptys + 1
-        else
-          get_fen = trim(get_fen)//trim(fen_sq(emptys))//fen_piece(board(tile))
+    do row = 7,0,-1
+      do col = 0,7
+        sq = 16*row+col
+        if(iand(sq,136) == 0)then
+          if(board(sq) == empty)then
+            emptys = emptys + 1
+          else
+            fen = trim(fen)//trim(fen_sq(emptys))//fen_piece(board(sq))
+            emptys = 0
+          end if
         end if
-      end if
-      if(iand(tile,8) /= 0 .and. iand(tile,7) == 0)then
-          get_fen = trim(get_fen)//trim(fen_sq(emptys))//'/'
-          emptys = 0
+      end do
+      fen = trim(fen)//trim(fen_sq(emptys))
+      emptys = 0
+      if(row /= 0)then
+        fen = trim(fen)//'/'
       end if
     end do
-    get_fen = trim(get_fen)//trim(fen_sq(emptys))
-    !fen side,castling,enpassant,50move,ply
-    get_fen = trim(get_fen)//fen_side(state%side)//trim(int2fen_cp(state%cp))//raw2alg(state%ep)
-    ! get_fen = trim(get_fen)//ply
+    !fen side
+    fen = trim(fen)//' '//fen_side(state%side)
+    !fen castle perm
+    fen_cp = ''
+    if(iand(state%cp,cp_wk) /= 0)then
+      fen_cp = trim(fen_cp)//'K'
+    end if
+    if(iand(state%cp,cp_wq) /= 0)then
+      fen_cp = trim(fen_cp)//'Q'
+    end if
+    if(iand(state%cp,cp_bk) /= 0)then
+      fen_cp = trim(fen_cp)//'k'
+    end if
+    if(iand(state%cp,cp_bq) /= 0)then
+      fen_cp = trim(fen_cp)//'q'
+    end if
+    if(fen_cp == '    ')then
+      fen_cp = '-'
+    end if
+    fen = trim(fen)//' '//trim(fen_cp)
+    !fen en passant
+    fen = trim(fen)//' '//raw2alg(state%ep)
+    !fen rule 50
+    write(fen_rule50,*)state%rule50
+    fen = trim(fen)//' '//adjustl(fen_rule50)
+    !fen full move counter
+    if(state%side == team_white)then
+      write(fen_ply,*)(ply+2)/2
+    end if
+    if(state%side == team_black)then
+      write(fen_ply,*)(ply+1)/2
+    end if
+    fen = trim(fen)//' '//adjustl(fen_ply)
   end function
   
   subroutine set_fen(fen_in) 
     character(*)::fen_in
-    character(len=90)::fen
+    character(len=100)::fen
     character(len=72)::fen_board,fen_board_expanded
     character(len=8),dimension(0:7)::fen_row
     character(len=8)::fen_row_r
     character(len=6)::fen_side,fen_cp,fen_ep
+    character(len=4)::fen_rule50
     character(len=8),dimension(1:8)::fen_empty = &
     & (/'-       ','--      ','---     ','----    ','-----   ','------  ','------- ','--------'/)
     character(len=1),dimension(0:8):: int2char = (/ ' ','1','2','3','4','5','6','7','8' /)
     character(len=1),dimension(0:12)::pie = (/'-','P','N','B','R','Q','K','p','n','b','r','q','k'/)
-    character(len=4),dimension(0:15):: int2fen_cp = (/ &
-    &'    ','K   ','Q   ','KQ  ','k   ','Kk  ','Qk  ','KQk ','q   ','Kq  ','Qq  ','KQq ','kq  ','Kkq ','Qkq ','KQkq' /)
     integer::row_ind,col_ind,pie_ind,fen_board_ind,tile,emptys,fen_cp_ind,ep_ind,cp_ind,sq_king
     logical::is_empty
     
@@ -1054,17 +1109,19 @@ program lostchess
     
     !parse fen
     fen_board = fen(1:index(fen,' '))
-    fen = fen(index(fen,' ')+1:90)
+    fen = fen(index(fen,' ')+1:100)
     fen_side = fen(1:index(fen,' '))
-    fen = fen(index(fen,' ')+1:90)
+    fen = fen(index(fen,' ')+1:100)
     fen_cp = fen(1:index(fen,' '))
-    fen = fen(index(fen,' ')+1:90)
+    fen = fen(index(fen,' ')+1:100)
     fen_ep = fen(1:index(fen,' '))
-    fen = fen(index(fen,' ')+1:90)
-      
+    fen = fen(index(fen,' ')+1:100)
+    fen_rule50 = fen(1:index(fen,' '))
+    fen = fen(index(fen,' ')+1:100)
+    
     !expand fen_board
     fen_board_expanded = ''
-    do fen_board_ind = 1,90
+    do fen_board_ind = 1,100
       is_empty = .false.
       do emptys = 1,8
         if(fen_board(fen_board_ind:fen_board_ind) == int2char(emptys))then
@@ -1077,42 +1134,47 @@ program lostchess
         fen_board_expanded = trim(fen_board_expanded)//fen_board(fen_board_ind:fen_board_ind)
       end if
     end do
-    ! write(*,*)fen_board_expanded
    
     !parse fen_board_expanded into fen_row
-    do row_ind=0,6
+    do row_ind=7,1,-1
       fen_row(row_ind) = fen_board_expanded(1:index(fen_board_expanded,'/')-1)
-      fen_board_expanded = fen_board_expanded(index(fen_board_expanded,'/')+1:90)
-      ! write(*,*) fen_row(row_ind)
+      fen_board_expanded = fen_board_expanded(index(fen_board_expanded,'/')+1:100)
     end do
-    fen_row(7) = fen_board_expanded
-    ! write(*,*) fen_row(7)
-    
+    fen_row(0) = fen_board_expanded
+
     !read fen_row to set board
     do row_ind = 0,7
-      fen_row_r = fen_row(7-row_ind)
+      fen_row_r = fen_row(row_ind)
       do col_ind = 0,7
         tile = 16*row_ind+col_ind
         do pie_ind = 0,12
           if(pie(pie_ind) == fen_row_r(col_ind+1:col_ind+1))then
-            ! write(*,*) tile,pie_ind
             board(tile) = pie_ind
           end if
         end do
       end do
     end do
     
-    !side cp and ep
-    if(fen_side == 'w') state%side=team_white
-    if(fen_side == 'b') state%side=team_black
+    !set fen side
+    if(fen_side == 'w') state%side = team_white
+    if(fen_side == 'b') state%side = team_black
     
-    do cp_ind = 0,15
-      if(fen_cp == int2fen_cp(cp_ind))then
-        state%cp = cp_ind
-        exit
-      end if
-    end do
-    
+    !set fen cp
+    state%cp =0 
+    if(index(fen_cp,'K') /= 0)then
+      state%cp = state%cp + cp_wk
+    end if
+    if(index(fen_cp,'Q') /= 0)then
+      state%cp = state%cp + cp_wq
+    end if
+    if(index(fen_cp,'k') /= 0)then
+      state%cp = state%cp + cp_bk
+    end if
+    if(index(fen_cp,'q') /= 0)then
+      state%cp = state%cp + cp_bq
+    end if
+
+    !set fen ep
     do ep_ind = -1,127
       if(fen_ep == raw2alg(ep_ind))then
         state%ep = ep_ind
@@ -1120,6 +1182,14 @@ program lostchess
       end if
     end do
     
+    !set fen rule50
+    read(fen_rule50,*)state%rule50
+    
+    !set fen full move counter
+    read(fen,*)ply
+    ply = 2*ply -2+state%side
+    
+    !set piece list
     do sq_king = 0,127
       if(is_king(board(sq_king)))then
         if(get_color(board(sq_king)) == team_white)then
@@ -1131,70 +1201,13 @@ program lostchess
       end if
     end do
     
+    !get position hash
     position_hash = hash_position()
     
   end subroutine
   
 !TESTS
-  
-  subroutine test_set_fen()
-  integer,dimension(0:127)::cp_board
-  integer::cp_castling_permissions,cp_enpassant
-  type(type_state)::cp_state
-  !set manually
-  state%side = team_white
-  state%cp = cp_all
-  state%ep = ob
-  board = empty
-  board(a1:h1) = (/wr,wn,wb,wq,wk,wb,wn,wr/)
-  board(a2:h2) = wp
-  board(a7:h7) = bp
-  board(a8:h8) = (/br,bn,bb,bq,bk,bb,bn,br /)
-  !copy
-  cp_state%side = state%side
-  cp_state%cp = state%cp
-  cp_enpassant = state%ep
-  cp_board = board
-  !set fen and compare
-  call set_fen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 ')
-  if(cp_state%side == state%side .and. &
-  & cp_state%cp == state%cp .and. &
-  & cp_enpassant == state%ep .and. &
-  & ALL( cp_board == board ))then
-    write(*,*) 'PASS ','fen starting position'
-  else
-    write(*,*) 'NO PASS ','fen starting position'
-    call write_board_raw()
-  end if
-  
-  !set manually
-  state%side = team_black
-  state%cp = cp_all-cp_bk-cp_bq
-  state%ep = 32
-  board = empty
-  board(a1:h1) = (/wr,wn,wb,wq,wk,wb,wn,wr/)
-  board(a2:h2) = wp
-  board(a7:h7) = bp
-  board(a8:h8) = (/br,bn,bb,bq,bk,bb,bn,br /)
-  !copy
-  cp_state%side = state%side
-  cp_state%cp = state%cp
-  cp_enpassant = state%ep
-  cp_board = board
-  !set fen and compare
-  call set_fen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQ a3 0')
-  if(cp_state%side == state%side .and. &
-  & cp_state%cp == state%cp .and. &
-  & cp_enpassant == state%ep .and. &
-  & ALL( cp_board == board ))then
-    write(*,*) 'PASS ','fen starting position b KQ c1'
-  else
-    write(*,*) 'NO PASS ','fen starting position b KQ c1'
-    call write_board_raw()
-  end if
-  
-  end subroutine
-    
+
   recursive function perft(depth) result(nodes)
     integer::nodes,depth,m_ind,king_sq,delta_nodes
     nodes = 0
@@ -1221,7 +1234,7 @@ program lostchess
     ! TT(mod(position_hash,TT_size),2) = delta_nodes
   end function
   
-  subroutine perft_handler
+  subroutine perft_handler !6.5s
     type type_position
       character(len=20)::desc
       character(len=100)::fen
@@ -1232,29 +1245,30 @@ program lostchess
     real::time_ini,time_fin
     
     positions(1)%desc = 'starting position'
-    positions(1)%fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0'
+    positions(1)%fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
     positions(1)%nodes = (/ 20,400,8902,197281,4865609,119060324 /)
     
     positions(2)%desc = 'kiwipete'
-    positions(2)%fen = 'r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0'
+    positions(2)%fen = 'r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1'
     positions(2)%nodes = (/ 48,2039,97862,4085603,193690690,inf /)
     
     positions(3)%desc = 'perft position 3'
-    positions(3)%fen = '8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - 0'
+    positions(3)%fen = '8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1'
     positions(3)%nodes = (/ 14,191,2812,43238,674624,11030083 /)
     
     positions(4)%desc = 'perft position 4'
-    positions(4)%fen = 'r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0'
+    positions(4)%fen = 'r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1'
     positions(4)%nodes = (/ 6,264,9467,422333,15833292,inf /)
     
     positions(5)%desc = 'perft position 5'
-    positions(5)%fen = 'rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 0'
+    positions(5)%fen = 'rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8'
     positions(5)%nodes = (/ 44,1486,62379,2103487,89941194,inf /)
     
     call cpu_time(time_ini)
     
     do p_ind = 1,5
       write(*,*) positions(p_ind)%desc
+      ! write(*,*) positions(p_ind)%fen
       call set_fen(positions(p_ind)%fen)
       hash_ini = hash_position()
       do depth = 1,6
@@ -1263,29 +1277,13 @@ program lostchess
           write(*,*) nodes,positions(p_ind)%nodes(depth),nodes==positions(p_ind)%nodes(depth)
         end if
       end do
-      write(*,*)'unchanged hash',hash_ini==position_hash
+      ! write(*,*)'unchanged hash',hash_ini==position_hash
+      write(*,*)'unchanged fen ',positions(p_ind)%fen==get_fen()
     end do
     
     call cpu_time(time_fin)
     write(*,*)'time: ',time_fin-time_ini
     
-  end subroutine
-
-!PLAYER
-
-  subroutine player_handler()
-    integer::m_ind = -1
-    type(type_move)::m=move_null
-    character(len=5)::alg
-    call write_board_pretty()
-    call gen_moves()
-    write(*,*) 'write move in long algebraic'
-    do while(.true.)
-      read*, alg
-      m = alg2move(alg)
-      if(.not. equal_m(m,move_null))exit
-    end do
-    call make_move(m)
   end subroutine
 
 !SEARCH ENGINE
@@ -1562,7 +1560,7 @@ program lostchess
     end if
   end function
   
-  subroutine search_handler1(depth)
+  subroutine search_handler(depth)
     integer::depth,iter_depth
     !iterate depth
     do iter_depth = 1,depth
