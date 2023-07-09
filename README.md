@@ -10,19 +10,18 @@ start lostchess.exe
 Or download the lostchess.exe for 64bits Windows
 
 ## Roadmap
-* depth based to time based search
-* piece tables for finals
-* test finals
-
-### Could have
+* rewrite generator to piece list
+* rewrite player_handler to pseudolegals
+* rewrite alpha-beta to handle pseudolegals
+* finish fen
 * handle promotions on read move
-* hash empty piece = 0
-* RNG for hash instead of abssin
-* piece list
-* get principal line
-* test hash tables
+* depth based to time based search
+* rewrite quescience
+* tapered eval
 * transposition tables
-* 50 move rule on fen
+* RNG for hash
+* get principal line
+
 
 
 

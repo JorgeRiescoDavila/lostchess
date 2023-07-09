@@ -84,6 +84,8 @@ program lostchess
   integer,dimension(0:7),parameter::directions_rook_bishop = (/  1, 16, -1,-16, 15, 17,-15,-17/)
   integer,dimension(0:7),parameter::directions_knight      = (/ 14, 18, 31, 33,-14,-18,-31,-33/)
   
+  
+  
   type type_move
     integer::ini
     integer::fin
@@ -99,7 +101,7 @@ program lostchess
   type type_hash_table
     integer,dimension(0:12,0:127)::board
     integer::side
-    integer::ep
+    integer,dimension(0:127)::ep
     integer,dimension(0:15)::cp
   end type
   type(type_hash_table)::hash_table
@@ -167,14 +169,14 @@ program lostchess
   type(type_search)::srch
   integer::ply_depth
 
+  integer,parameter::TT_size = 2**10
+  integer,dimension(0:TT_size-1,0:2)::TT
+
   !testing variables
-  integer::selected_option,winner
+  integer::selected_option,winner  
   
   !init program
   call init()
-  call restart_game()
-
-
 
   do while (.true.)
     write(*,*) 'select options -----------------------------------------------------------------'
@@ -210,6 +212,7 @@ program lostchess
           end if
         end do
       case (3)
+        call restart_game()
         call perft_handler()
       case default
         exit
@@ -227,15 +230,18 @@ program lostchess
 
   subroutine init_hash_table()
     integer::sq,pie,cp_ind
-    do pie = 0,12
+    hash_table%board(0,0:127) = 0
+    do pie = 1,12
       do sq = 0,127
-        hash_table%board(pie,sq) = floor(abs(sin(sq+pie*128+1.)*2**30))
+        hash_table%board(pie,sq) = floor(abs(sin(sq+pie*128+1.1)*2**30))
       end do
     end do
-    hash_table%side = floor(abs(sin(1664+1.)*2**30))
-    hash_table%ep = floor(abs(sin(1665+1.)*2**30))
+    hash_table%side = floor(abs(sin(1664+1.1)*2**30))
+    do sq = 0,127
+      hash_table%ep(sq) = floor(abs(sin(1665+sq+1.1)*2**30))
+    end do
     do cp_ind = 0,15
-      hash_table%cp(cp_ind) = floor(abs(sin(cp_ind+1666+1.)*2**30))
+      hash_table%cp(cp_ind) = floor(abs(sin(cp_ind+1792+1.1)*2**30))
     end do
   end subroutine
 
@@ -277,14 +283,14 @@ program lostchess
       end if
     end do
     hash = ieor(hash,hash_table%side)
-    hash = ieor(hash,hash_table%ep)
+    hash = ieor(hash,hash_table%ep(state%ep))
     hash = ieor(hash,hash_table%cp(state%cp))
   end function
 
 !END
 
   function check_end() result(winner)
-    integer::winner,rule50_ind,reps,king_ind
+    integer::winner,rule50_ind,reps,king_sq
     winner = team_none
     reps = 1
     !50 move rule
@@ -306,8 +312,8 @@ program lostchess
     call gen_moves()
     ! call write_moves()
     if(moves_list_ind(ply) == moves_list_ind(ply+1))then
-      king_ind = piece_list%kings(state%side)
-      if(is_attacked(king_ind,ieor(1,state%side)))then
+      king_sq = piece_list%kings(state%side)
+      if(is_attacked(king_sq,ieor(1,state%side)))then
         winner = ieor(1,state%side)
         return
       else
@@ -332,7 +338,7 @@ program lostchess
 
   subroutine add_move(ini,fin,is_capture,promotion_pie,is_pawnstart,is_enpassant,is_castling,captured_pie)
     type(type_move)::m
-    integer::ini,fin,promotion_pie,captured_pie,king_ind
+    integer::ini,fin,promotion_pie,captured_pie,king_sq
     logical::is_capture,is_pawnstart,is_enpassant,is_castling,is_legal
     is_legal = .false.
     m%ini = ini
@@ -344,17 +350,17 @@ program lostchess
     m%is_castling = is_castling
     m%captured_pie = captured_pie
     
-    call make_move(m)
-    king_ind = piece_list%kings(ieor(1,state%side))
-    if(.not. is_attacked(king_ind,state%side))then
-      is_legal =.true.
-    end if
-    call undo_last_move()
+    ! call make_move(m)
+    ! king_sq = piece_list%kings(ieor(1,state%side))
+    ! if(.not. is_attacked(king_sq,state%side))then
+      ! is_legal =.true.
+    ! end if
+    ! call undo_last_move()
     
-    if(is_legal)then
+    ! if(is_legal)then
       moves_list(moves_list_ind(ply+1)) = m
       moves_list_ind(ply+1) = moves_list_ind(ply+1) + 1
-    end if
+    ! end if
   end subroutine
   
   subroutine gen_pawn_moves(ini)
@@ -639,7 +645,7 @@ program lostchess
     position_hash = ieor(position_hash,hash_table%board(board(m%ini),m%ini))
     position_hash = ieor(position_hash,hash_table%board(board(m%fin),m%fin))
     
-    position_hash = ieor(position_hash,hash_table%ep)
+    position_hash = ieor(position_hash,hash_table%ep(state%ep))
     if(m%is_pawnstart)then
       if(state%side == team_white)then
         state%ep = m%ini+16
@@ -650,7 +656,7 @@ program lostchess
     else
       state%ep = ob
     end if
-    position_hash = ieor(position_hash,hash_table%ep)
+    position_hash = ieor(position_hash,hash_table%ep(state%ep))
     
     if(m%is_enpassant)then
       if(state%side == team_white)then
@@ -1125,6 +1131,8 @@ program lostchess
       end if
     end do
     
+    position_hash = hash_position()
+    
   end subroutine
   
 !TESTS
@@ -1186,66 +1194,81 @@ program lostchess
   end if
   
   end subroutine
-  
+    
   recursive function perft(depth) result(nodes)
-    integer::nodes,depth,m_ind
+    integer::nodes,depth,m_ind,king_sq,delta_nodes
     nodes = 0
     if(depth == 0) then
       nodes = 1
       return
     end if
+    ! if(TT(mod(position_hash,TT_size),0) ==  position_hash .and. TT(mod(position_hash,TT_size),1) == depth)then
+      ! nodes = TT(mod(position_hash,TT_size),2)
+      ! return
+    ! end if
     call gen_moves()
     do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
       call make_move(moves_list(m_ind))
-      nodes = nodes + perft(depth-1)
+        king_sq = piece_list%kings(ieor(1,state%side))
+        if(.not. is_attacked(king_sq,state%side))then
+          delta_nodes = perft(depth-1)
+          nodes = nodes + delta_nodes
+        end if
       call undo_last_move()
     end do
+    ! TT(mod(position_hash,TT_size),0) = position_hash
+    ! TT(mod(position_hash,TT_size),1) = depth
+    ! TT(mod(position_hash,TT_size),2) = delta_nodes
   end function
   
   subroutine perft_handler
-    integer::depth
-    integer,dimension(1:5)::perft_starting_nodes = (/ 20,400,8902,197281,4865609 /)
-    integer,dimension(1:5)::perft_kiwipete_nodes = (/ 48,2039,97862,4085603,193690690 /)
-    integer,dimension(1:6)::perft_position3_nodes = (/ 14,191,2812,43238,674624,11030083 /)
-    integer,dimension(1:5)::perft_position4_nodes = (/ 6,264,9467,422333,15833292 /)
-    integer,dimension(1:5)::perft_position5_nodes = (/ 44,1486,62379,2103487,89941194 /)
+    type type_position
+      character(len=20)::desc
+      character(len=100)::fen
+      integer,dimension(1:6)::nodes
+    end type
+    type(type_position),dimension(1:5)::positions
+    integer::p_ind,depth,nodes,hash_ini
     real::time_ini,time_fin
     
+    positions(1)%desc = 'starting position'
+    positions(1)%fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0'
+    positions(1)%nodes = (/ 20,400,8902,197281,4865609,119060324 /)
+    
+    positions(2)%desc = 'kiwipete'
+    positions(2)%fen = 'r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0'
+    positions(2)%nodes = (/ 48,2039,97862,4085603,193690690,inf /)
+    
+    positions(3)%desc = 'perft position 3'
+    positions(3)%fen = '8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - 0'
+    positions(3)%nodes = (/ 14,191,2812,43238,674624,11030083 /)
+    
+    positions(4)%desc = 'perft position 4'
+    positions(4)%fen = 'r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0'
+    positions(4)%nodes = (/ 6,264,9467,422333,15833292,inf /)
+    
+    positions(5)%desc = 'perft position 5'
+    positions(5)%fen = 'rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 0'
+    positions(5)%nodes = (/ 44,1486,62379,2103487,89941194,inf /)
+    
     call cpu_time(time_ini)
-
-    write(*,*) 'perft starting position'
-    call set_fen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0')     
-    do depth = 1,5
-      write(*,*) perft(depth),perft_starting_nodes(depth)
-    end do        
-        
-    write(*,*) 'perft kiwipete'
-    call set_fen('r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0')
-    do depth = 1,4
-      write(*,*) perft(depth),perft_kiwipete_nodes(depth)
-    end do 
     
-    write(*,*) 'perft position3'
-    call set_fen('8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - 0')      
-    do depth = 1,5
-      write(*,*) perft(depth),perft_position3_nodes(depth)
-    end do 
-    
-    write(*,*) 'perft position4'
-    call set_fen('r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0')      
-    do depth = 1,5
-      write(*,*) perft(depth),perft_position4_nodes(depth)
-    end do 
-      
-    write(*,*) 'perft position5'
-    call set_fen('rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 0')      
-    do depth = 1,4
-      write(*,*) perft(depth),perft_position5_nodes(depth)
-    end do 
+    do p_ind = 1,5
+      write(*,*) positions(p_ind)%desc
+      call set_fen(positions(p_ind)%fen)
+      hash_ini = hash_position()
+      do depth = 1,6
+        if(positions(p_ind)%nodes(depth) < 12000000)then
+          nodes = perft(depth)
+          write(*,*) nodes,positions(p_ind)%nodes(depth),nodes==positions(p_ind)%nodes(depth)
+        end if
+      end do
+      write(*,*)'unchanged hash',hash_ini==position_hash
+    end do
     
     call cpu_time(time_fin)
     write(*,*)'time: ',time_fin-time_ini
-        
+    
   end subroutine
 
 !PLAYER
@@ -1412,7 +1435,7 @@ program lostchess
     integer::depth,v
     integer::best_score,beta,alpha
     integer::score
-    integer::m_ind,king_ind,rule50_ind
+    integer::m_ind,king_sq,rule50_ind
     type(type_move)::m
     integer::best_ind,best_score_move
     !return due to game end
@@ -1428,8 +1451,8 @@ program lostchess
     end do
     call gen_moves()
     if(moves_list_ind(ply) == moves_list_ind(ply+1))then
-      king_ind = piece_list%kings(state%side)
-      if(is_attacked(king_ind,ieor(1,state%side)))then
+      king_sq = piece_list%kings(state%side)
+      if(is_attacked(king_sq,ieor(1,state%side)))then
         best_score = -mate_score+depth
       else
         best_score = 0
@@ -1546,7 +1569,7 @@ program lostchess
       !init
       srch%nodes = 0
       srch%best_score = -inf
-      ! srch%best_move = move_null
+      srch%best_move = move_null
       srch%calling_depth = iter_depth
       !alpha beta
       call cpu_time(srch%t_ini)
