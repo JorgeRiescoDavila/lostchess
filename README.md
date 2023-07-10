@@ -10,7 +10,7 @@ start lostchess.exe
 Or download the lostchess.exe for 64bits Windows
 
 ## Roadmap
-* quiescience buged?
+* quiescience buged
 * compress moves to integers
 * handle promotions on read move
 * tapered eval

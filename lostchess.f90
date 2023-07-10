@@ -171,6 +171,10 @@ program lostchess
   type(type_search)::srch
   integer::ply_depth
 
+  !principal variation table
+  integer,dimension(0:ulti_depth-1)::PV_length
+  type(type_move),dimension(0:ulti_depth-1,0:ulti_depth-1)::PV_table
+
   !transposition table
   integer,parameter::TT_size = 2**10
   integer,dimension(0:TT_size-1,0:2)::TT
@@ -1017,6 +1021,11 @@ program lostchess
     m = move_null
   end function
   
+  ! function moves2algs(moves) result(algs)
+    ! type(type_move),dimension(*)::moves
+    ! character(len=5),dimension(*)
+  ! end function
+  
   subroutine write_moves()
     integer::m_ind
     type(type_move)::m
@@ -1453,9 +1462,10 @@ program lostchess
   end function
 
   subroutine search_handler(depth,time_max)
-    integer::depth,d_ind
+    integer::depth,d_ind,pv_ind
     real::time_max,time_start
     write(*,*)'depth | best move | best score |    time |     nodes |  +q nodes | checkmates | stalemates'
+    pv_table = move_null
     call cpu_time(time_start)
     !iterate depths
     do d_ind = 1,depth
@@ -1475,15 +1485,21 @@ program lostchess
         !write results
         write(*,'(I4,A14,I13,f10.3,I12,I12,I12,I12)')d_ind,move2alg(srch%best_move),srch%best_score,srch%t_cur-srch%t_ini &
         & ,srch%nodes,srch%nodes_quies-srch%nodes,srch%chekmates,srch%stalemates
+        do pv_ind = 0,PV_length(0)-1
+          write(*,'(A5)',advance='no') move2alg(PV_table(0,pv_ind))
+        end do
+        write(*,*)
       end if
     end do
   end subroutine
 
   recursive function alpha_beta(depth,alpha_in,beta) result(score)
     integer::depth,alpha_in,alpha,beta,score
-    integer::m_ind,legal_moves,rule50_ind
+    integer::m_ind,legal_moves,rule50_ind,next_ply
     type(type_move)::m
     alpha = alpha_in
+
+    PV_length(srch%ply) = srch%ply
 
     !draw rule50
     if(state%rule50 == 100)then
@@ -1502,8 +1518,8 @@ program lostchess
     !leaf node
     if(depth == 0)then
       srch%nodes = srch%nodes+1
-      score = static_eval()
-      ! score = quies(alpha,beta)
+      ! score = static_eval()
+      score = quies(alpha,beta)
       return
     end if
     
@@ -1542,6 +1558,13 @@ program lostchess
       !better move found
       if(score > alpha)then
         alpha = score
+        
+        PV_table(srch%ply,srch%ply) = m
+        do next_ply = srch%ply+1,PV_length(srch%ply+1)-1
+          pv_table(srch%ply,next_ply) = PV_table(srch%ply+1,next_ply)
+        end do
+        PV_length(srch%ply) = PV_length(srch%ply+1)
+        
         if(srch%ply == 0)then
           srch%best_move = m
         end if
