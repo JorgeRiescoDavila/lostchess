@@ -10,13 +10,9 @@ start lostchess.exe
 Or download the lostchess.exe for 64bits Windows
 
 ## Roadmap
-* rewrite generator to piece list
-* rewrite player_handler to pseudolegals
-* rewrite alpha-beta to handle pseudolegals
-* finish fen
+* quiescience buged?
+* compress moves to integers
 * handle promotions on read move
-* depth based to time based search
-* rewrite quescience
 * tapered eval
 * transposition tables
 * RNG for hash

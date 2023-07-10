@@ -41,6 +41,15 @@ program lostchess
   logical,parameter,dimension(0:12)::is_pawn = (/ .false., &
   & .true.,.false.,.false.,.false.,.false.,.false., &
   & .true.,.false.,.false.,.false.,.false.,.false. /)
+  ! logical,parameter,dimension(0:12)::is_queen = (/ .false., &
+  ! & .false.,.false.,.false.,.false.,.true.,.false., &
+  ! & .false.,.false.,.false.,.false.,.true.,.false. /)
+  ! logical,parameter,dimension(0:12)::is_bishop = (/ .false., &
+  ! & .false.,.false.,.true.,.false.,.false.,.false., &
+  ! & .false.,.false.,.true.,.false.,.false.,.false. /)
+  ! logical,parameter,dimension(0:12)::is_rook = (/ .false., &
+  ! & .false.,.false.,.false.,.true.,.false.,.false., &
+  ! & .false.,.false.,.false.,.true.,.false.,.false. /)
   !important tiles
   integer,parameter::ob = -1
   integer,parameter::a1 = 0
@@ -99,8 +108,8 @@ program lostchess
   type type_hash_table
     integer,dimension(0:12,0:127)::board
     integer::side
-    integer,dimension(0:127)::ep
     integer,dimension(0:15)::cp
+    integer,dimension(0:127)::ep
   end type
   type(type_hash_table)::hash_table
   
@@ -110,9 +119,10 @@ program lostchess
   !state
   type type_state
     integer::side
-    integer::ep
     integer::cp
+    integer::ep
     integer::rule50
+    integer,dimension(0:1)::kings
   end type
   type(type_state)::state
 
@@ -136,13 +146,7 @@ program lostchess
   integer,dimension(0:max_moves_per_game-1)::moves_list_ind
   type(type_move),dimension(0:max_moves_listed-1)::moves_list
   integer,dimension(0:max_moves_listed-1)::moves_score
-  
-  !piece list
-  type type_piece_list
-    integer,dimension(0:1)::kings
-  end type
-  type(type_piece_list)::piece_list 
-  
+    
   !search engine
   integer,parameter::inf = 2**30
   integer,parameter::mate_score = 1000000
@@ -155,12 +159,12 @@ program lostchess
     !variabless
     integer::ss_material(0:1) 
     integer::ss_position(0:1)
-    integer::calling_depth
+    integer::ply
     integer::best_score
     type(type_move)::best_move
     type(type_move),dimension(0:1,0:ulti_depth)::killers
     ! statistics
-    integer::nodes
+    integer::nodes,nodes_quies,chekmates,stalemates
     real::t_ini
     real::t_cur
   end type
@@ -176,7 +180,7 @@ program lostchess
   
   !init program
   call init()
-
+  
   do while (.true.)
     write(*,*) 'select options -----------------------------------------------------------------'
     write(*,*) '1 PVP | 2 PVE | 3 PerfTest'
@@ -185,6 +189,7 @@ program lostchess
     select case (selected_option)
       case (1)
         call restart_game()
+        call write_board_pretty()
         do while(.true.)
           call player_handler()
           winner = check_end()
@@ -194,10 +199,12 @@ program lostchess
           end if
         end do
       case (2)
-        call restart_game()      
+        call restart_game()  
+        call write_board_pretty()        
         do while(.true.)
-          call search_handler(6)
+          call search_handler(8,3.)
           call make_move(srch%best_move)
+          call write_board_pretty()
           winner = check_end()
           if(winner /= team_none)then
             write(*,*)'WINNER ',winner
@@ -256,6 +263,7 @@ program lostchess
     state%cp = cp_all
     state%ep = ob
     state%rule50 = 0
+    state%kings = (/ e1,e8 /)
     !hash board and state
     position_hash = hash_position()
     !restart moves done
@@ -268,8 +276,6 @@ program lostchess
     !reastart list of moves
     moves_list_ind = 0
     moves_list = move_null
-    !restart piece list
-    piece_list%kings = (/ e1,e8 /)
   end subroutine
   
   function hash_position() result(hash)
@@ -292,7 +298,6 @@ program lostchess
     integer::king_sq
     type(type_move)::m=move_null
     character(len=5)::alg
-    call write_board_pretty()
     call gen_moves()
     write(*,*) 'write move in long algebraic'
     do while(.true.)
@@ -300,19 +305,20 @@ program lostchess
       m = alg2move(alg)
       if(.not. equal_m(m,move_null))then
         call make_move(m)
-          king_sq = piece_list%kings(ieor(1,state%side))
+          king_sq = state%kings(ieor(1,state%side))
           if(.not. is_attacked(king_sq,state%side))then
             exit
           end if
         call undo_last_move()
       end if
     end do
+    call write_board_pretty()
   end subroutine
 
 !END
 
   function check_end() result(winner)
-    integer::winner,rule50_ind,reps,king_sq
+    integer::winner,rule50_ind,reps,king_sq,legal_moves,m_ind
     winner = team_none
     reps = 1
     !50 move rule
@@ -331,17 +337,25 @@ program lostchess
       end if
     end do
     !checkmate/stalemate
+    legal_moves = 0
     call gen_moves()
-    ! call write_moves()
-    if(moves_list_ind(ply) == moves_list_ind(ply+1))then
-      king_sq = piece_list%kings(state%side)
-      if(is_attacked(king_sq,ieor(1,state%side)))then
+    do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
+      call make_move(moves_list(m_ind))
+        if(is_attacked(state%kings(ieor(1,state%side)),state%side))then
+          call undo_last_move()
+          cycle
+        end if
+        legal_moves = legal_moves+1
+      call undo_last_move()
+    end do
+    !checkmate/stalemate
+    if(legal_moves == 0)then
+      if(is_attacked(state%kings(state%side),ieor(1,state%side)))then
         winner = ieor(1,state%side)
-        return
       else
         winner = team_both
-        return
       end if
+      return
     end if
   end function
 
@@ -372,17 +386,8 @@ program lostchess
     m%is_castling = is_castling
     m%captured_pie = captured_pie
     
-    ! call make_move(m)
-    ! king_sq = piece_list%kings(ieor(1,state%side))
-    ! if(.not. is_attacked(king_sq,state%side))then
-      ! is_legal =.true.
-    ! end if
-    ! call undo_last_move()
-    
-    ! if(is_legal)then
-      moves_list(moves_list_ind(ply+1)) = m
-      moves_list_ind(ply+1) = moves_list_ind(ply+1) + 1
-    ! end if
+    moves_list(moves_list_ind(ply+1)) = m
+    moves_list_ind(ply+1) = moves_list_ind(ply+1) + 1
   end subroutine
   
   subroutine gen_pawn_moves(ini)
@@ -643,15 +648,19 @@ program lostchess
     hist(ply)%hash = position_hash
     hist(ply)%move = m
     
-    if(m%is_capture) state%rule50 = 0
-    if(is_pawn(board(m%ini))) state%rule50 = 0
+    if(m%is_capture .or. is_pawn(board(m%ini)))then
+      state%rule50 = 0
+    else
+      state%rule50 = state%rule50 +1
+    end if    
+
     
     if(is_king(board(m%ini)))then
       if(get_color(board(m%ini)) == team_white)then
-        piece_list%kings(team_white) = m%fin
+        state%kings(team_white) = m%fin
       end if
       if(get_color(board(m%ini)) == team_black)then
-        piece_list%kings(team_black) = m%fin
+        state%kings(team_black) = m%fin
       end if
     end if
     
@@ -752,10 +761,10 @@ program lostchess
     
     if(is_king(board(m%fin)))then
       if(get_color(board(m%fin)) == team_white)then
-        piece_list%kings(team_white) = m%ini
+        state%kings(team_white) = m%ini
       end if
       if(get_color(board(m%fin)) == team_black)then
-        piece_list%kings(team_black) = m%ini
+        state%kings(team_black) = m%ini
       end if
     end if
     
@@ -947,12 +956,12 @@ program lostchess
     do sq=0,127
       board_pie(sq) = fen_piece(board(sq))
     end do
-    write(*,*) 'board'
+    write(*,*)get_fen()
     do row=7,0,-1
-      write(*,'(A1,I1,A3,8(A4))') ' ',row+1,'  |',board_pie(16*row:16*row+7)
+      write(*,'(A1,I1,A3,8(A3))') ' ',row+1,'  |',board_pie(16*row:16*row+7)
     end do
     write(*,*) '    ---------------------------------'
-    write(*,*) '       a   b   c   d   e   f   g   h'
+    write(*,*) '      a  b  c  d  e  f  g  h'
   end subroutine
   
   subroutine write_board(board)
@@ -1102,7 +1111,8 @@ program lostchess
     & (/'-       ','--      ','---     ','----    ','-----   ','------  ','------- ','--------'/)
     character(len=1),dimension(0:8):: int2char = (/ ' ','1','2','3','4','5','6','7','8' /)
     character(len=1),dimension(0:12)::pie = (/'-','P','N','B','R','Q','K','p','n','b','r','q','k'/)
-    integer::row_ind,col_ind,pie_ind,fen_board_ind,tile,emptys,fen_cp_ind,ep_ind,cp_ind,sq_king
+    integer::row_ind,col_ind,pie_ind,fen_board_ind,sq,emptys,ep_ind
+    integer,dimension(0:1)::pie_cnt
     logical::is_empty
     
     fen = trim(fen_in)
@@ -1146,10 +1156,10 @@ program lostchess
     do row_ind = 0,7
       fen_row_r = fen_row(row_ind)
       do col_ind = 0,7
-        tile = 16*row_ind+col_ind
+        sq = 16*row_ind+col_ind
         do pie_ind = 0,12
           if(pie(pie_ind) == fen_row_r(col_ind+1:col_ind+1))then
-            board(tile) = pie_ind
+            board(sq) = pie_ind
           end if
         end do
       end do
@@ -1160,7 +1170,7 @@ program lostchess
     if(fen_side == 'b') state%side = team_black
     
     !set fen cp
-    state%cp =0 
+    state%cp = 0 
     if(index(fen_cp,'K') /= 0)then
       state%cp = state%cp + cp_wk
     end if
@@ -1190,17 +1200,17 @@ program lostchess
     ply = 2*ply -2+state%side
     
     !set piece list
-    do sq_king = 0,127
-      if(is_king(board(sq_king)))then
-        if(get_color(board(sq_king)) == team_white)then
-          piece_list%kings(team_white) = sq_king
+    do sq = 0,127
+      if(is_king(board(sq)))then
+        if(get_color(board(sq)) == team_white)then
+          state%kings(team_white) = sq
         end if
-        if(get_color(board(sq_king)) == team_black)then
-          piece_list%kings(team_black) = sq_king
+        if(get_color(board(sq)) == team_black)then
+          state%kings(team_black) = sq
         end if
       end if
     end do
-    
+
     !get position hash
     position_hash = hash_position()
     
@@ -1222,11 +1232,13 @@ program lostchess
     call gen_moves()
     do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
       call make_move(moves_list(m_ind))
-        king_sq = piece_list%kings(ieor(1,state%side))
-        if(.not. is_attacked(king_sq,state%side))then
-          delta_nodes = perft(depth-1)
-          nodes = nodes + delta_nodes
+        king_sq = state%kings(ieor(1,state%side))
+        if(is_attacked(king_sq,state%side))then
+          call undo_last_move()
+          cycle
         end if
+        delta_nodes = perft(depth-1)
+        nodes = nodes + delta_nodes
       call undo_last_move()
     end do
     ! TT(mod(position_hash,TT_size),0) = position_hash
@@ -1277,8 +1289,8 @@ program lostchess
           write(*,*) nodes,positions(p_ind)%nodes(depth),nodes==positions(p_ind)%nodes(depth)
         end if
       end do
-      ! write(*,*)'unchanged hash',hash_ini==position_hash
-      write(*,*)'unchanged fen ',positions(p_ind)%fen==get_fen()
+      ! write(*,*)'unchanged hash',hash_ini == position_hash
+      ! write(*,*)'unchanged fen ',positions(p_ind)%fen == get_fen()
     end do
     
     call cpu_time(time_fin)
@@ -1411,10 +1423,10 @@ program lostchess
     do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
       moves_score(m_ind) = 0
       m = moves_list(m_ind)
-      if(equal_m(m,srch%killers(1,ply_depth)))then
+      if(equal_m(m,srch%killers(1,srch%ply)))then
          moves_score(m_ind) = 100
       end if
-      if(equal_m(m,srch%killers(0,ply_depth)))then
+      if(equal_m(m,srch%killers(0,srch%ply)))then
          moves_score(m_ind) = 200
       end if
       if(m%is_capture)then
@@ -1429,155 +1441,177 @@ program lostchess
     end do
   end subroutine
 
-  recursive function alpha_beta(depth,alpha,beta) result(best_score)
-    integer::depth,v
-    integer::best_score,beta,alpha
-    integer::score
-    integer::m_ind,king_sq,rule50_ind
-    type(type_move)::m
-    integer::best_ind,best_score_move
-    !return due to game end
-    if(state%rule50 == 100)then
-      best_score = 0
-      return
-    end if
-    do rule50_ind = 1,state%rule50
-      if(hist(ply-rule50_ind)%hash == position_hash)then
-        best_score = 0
+  function get_best_ind() result(m_ind)
+  integer::m_ind,max_score
+    max_score = maxval(moves_score(moves_list_ind(ply):moves_list_ind(ply+1)-1))
+    do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
+      if(moves_score(m_ind) == max_score)then
+        moves_score(m_ind) = -inf
         return
       end if
     end do
-    call gen_moves()
-    if(moves_list_ind(ply) == moves_list_ind(ply+1))then
-      king_sq = piece_list%kings(state%side)
-      if(is_attacked(king_sq,ieor(1,state%side)))then
-        best_score = -mate_score+depth
-      else
-        best_score = 0
+  end function
+
+  subroutine search_handler(depth,time_max)
+    integer::depth,d_ind
+    real::time_max,time_start
+    write(*,*)'depth | best move | best score |    time |     nodes |  +q nodes | checkmates | stalemates'
+    call cpu_time(time_start)
+    !iterate depths
+    do d_ind = 1,depth
+      call cpu_time(srch%t_ini)
+      if(srch%t_ini - time_start < time_max)then
+        !init
+        srch%nodes = 0
+        srch%best_score = -inf
+        srch%best_move = move_null
+        srch%ply = 0
+        srch%chekmates = 0
+        srch%stalemates = 0
+        srch%nodes_quies = 0
+        !alpha beta
+        srch%best_score = alpha_beta(d_ind,-inf,inf)
+        call cpu_time(srch%t_cur)
+        !write results
+        write(*,'(I4,A14,I13,f10.3,I12,I12,I12,I12)')d_ind,move2alg(srch%best_move),srch%best_score,srch%t_cur-srch%t_ini &
+        & ,srch%nodes,srch%nodes_quies-srch%nodes,srch%chekmates,srch%stalemates
       end if
+    end do
+  end subroutine
+
+  recursive function alpha_beta(depth,alpha_in,beta) result(score)
+    integer::depth,alpha_in,alpha,beta,score
+    integer::m_ind,legal_moves,rule50_ind
+    type(type_move)::m
+    alpha = alpha_in
+
+    !draw rule50
+    if(state%rule50 == 100)then
+      score = 0
       return
     end if
-    !static eval
-    if(depth==srch%calling_depth)then
-      srch%nodes = srch%nodes + 1
-      best_score = static_eval()
-      best_score = quies(best_score,beta)
-      return
-    end if
-    !start alpha_beta
-    best_score = alpha
-    !score moves for sort
-    call score_moves()
-    do while(.true.)
-      !select best move
-      best_score_move = -inf
-      best_ind = -1
-      do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
-        if(moves_score(m_ind) > best_score_move)then
-          best_score_move = moves_score(m_ind)
-          best_ind = m_ind
-          if(m_ind >= 0)then
-            moves_score(m_ind) = -inf
-          else
-            write(*,*)'trying to acces move_score with negative index'
-          end if
-        end if
-      end do
-      m_ind = best_ind
     
-      if(m_ind == -1) exit
-      m = moves_list(m_ind)
-      call make_move(m)
-      ply_depth = ply_depth+1
-      v = -alpha_beta(depth+1,-beta,-best_score)
-      call undo_last_move()
-      ply_depth = ply_depth-1
-      if(v >= beta)then
-        best_score = beta
-          srch%killers(1,ply_depth) = srch%killers(0,ply_depth)
-          srch%killers(0,ply_depth) = m
+    !draw threefold
+    do rule50_ind = 1,state%rule50
+      if(hist(ply-rule50_ind)%hash == position_hash)then
+        score = 0
         return
       end if
-      if(v > best_score)then
-        best_score = v
-        if(depth == 0)then
+    end do
+
+    !leaf node
+    if(depth == 0)then
+      srch%nodes = srch%nodes+1
+      score = static_eval()
+      ! score = quies(alpha,beta)
+      return
+    end if
+    
+    !generate moves
+    call gen_moves()
+    
+    !set moves scores
+    call score_moves()
+    
+    !count legal moves
+    legal_moves = 0
+    
+    do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
+      m = moves_list(get_best_ind())
+
+      call make_move(m)
+        srch%ply = srch%ply+1
+        if(is_attacked(state%kings(ieor(1,state%side)),state%side))then
+          call undo_last_move()
+          srch%ply = srch%ply-1
+          cycle
+        end if
+        legal_moves = legal_moves+1
+        score = -alpha_beta(depth-1,-beta,-alpha)
+      call undo_last_move()
+      srch%ply = srch%ply-1
+      
+      !this position is too good, openent wont choose this path
+      if(score >= beta)then
+        srch%killers(1,srch%ply) = srch%killers(0,srch%ply)
+        srch%killers(0,srch%ply) = m
+        score = beta
+        return
+      end if
+      
+      !better move found
+      if(score > alpha)then
+        alpha = score
+        if(srch%ply == 0)then
           srch%best_move = m
         end if
       end if
     end do
-  end function
-  
-  recursive function quies(alpha_in,beta) result(alpha)
-    integer::alpha_in,beta,alpha,v,m_ind,best_ind,best_score_move
-    type(type_move)::m
-    alpha = alpha_in
-    v = static_eval()
-    if(v >= beta)then
-      alpha = beta
+    
+    !checkmate/stalemate
+    if(legal_moves == 0)then
+      if(is_attacked(state%kings(state%side),ieor(1,state%side)))then
+        srch%chekmates = srch%chekmates+1
+        score = -mate_score+srch%ply
+      else
+        srch%stalemates = srch%stalemates+1
+        score = 0
+      end if
       return
     end if
-    if(v > alpha)then
-      alpha = v
+    
+    score = alpha
+  end function
+
+  recursive function quies(alpha_in,beta) result(score)
+    integer::alpha_in,alpha,beta,score
+    integer::m_ind,legal_moves,rule50_ind
+    type(type_move)::m
+    alpha = alpha_in
+
+    srch%nodes_quies = srch%nodes_quies+1
+    !static eval
+    score = static_eval()
+    if(score >= beta)then
+      score = beta
+      return
     end if
+    if(score > alpha)then
+      alpha = score
+    end if
+    
+    !generate moves
     call gen_good_moves()
-    if(moves_list_ind(ply) /= moves_list_ind(ply+1))then
-      ! alpha = v
-      ! return
-    ! end if
+    
+    !set moves scores
     call score_moves()
-    do while(.true.)
-      !select best move
-      best_score_move = -inf
-      best_ind = -1
-      do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
-        if(moves_score(m_ind) > best_score_move)then
-          best_score_move = moves_score(m_ind)
-          best_ind = m_ind
-          if(m_ind >= 0)then
-            moves_score(m_ind) = -inf
-          else
-            write(*,*)'trying to acces move_score with negative index'
-          end if
-        end if
-      end do
-      m_ind = best_ind
-      
-      if(m_ind == -1) exit
-      m = moves_list(m_ind)
+    
+    do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
+      m = moves_list(get_best_ind())
       call make_move(m)
-      v = -quies(-beta,-alpha)
+        srch%ply = srch%ply+1
+        if(is_attacked(state%kings(ieor(1,state%side)),state%side))then
+          call undo_last_move()
+          srch%ply = srch%ply-1
+          cycle
+        end if
+        score = -quies(-beta,-alpha)
       call undo_last_move()
-      if(v >= beta)then
-        alpha = beta
+      srch%ply = srch%ply-1
+      
+      !this position is too good, openent wont choose this path
+      if(score >= beta)then
+        score = beta
         return
       end if
-      if(v > alpha)then
-        alpha = v
+      
+      !better move found
+      if(score > alpha)then
+        alpha = score
       end if
     end do
-    else
-    ! alpha = v
-    end if
+    
+    score = alpha
   end function
-  
-  subroutine search_handler(depth)
-    integer::depth,iter_depth
-    !iterate depth
-    do iter_depth = 1,depth
-      !init
-      srch%nodes = 0
-      srch%best_score = -inf
-      srch%best_move = move_null
-      srch%calling_depth = iter_depth
-      !alpha beta
-      call cpu_time(srch%t_ini)
-      ply_depth = 0
-      srch%best_score = alpha_beta(0,-inf,inf)
-      call cpu_time(srch%t_cur)
-      !write results
-      write(*,*)'depth ',iter_depth,'best_move ',move2alg(srch%best_move),'best_score ',srch%best_score, &
-        & 'nodes ',srch%nodes,'time ',srch%t_cur-srch%t_ini
-    end do
-  end subroutine
-  
-  end program lostchess
+
+end program lostchess
