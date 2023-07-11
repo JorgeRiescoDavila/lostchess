@@ -13,9 +13,7 @@ Or download the lostchess.exe for 64bits Windows
 * quiescience buged
 * transposition tables for search
 * compress moves to integers
-* handle promotions on read move
 * tapered eval
-* return if ultimate depth reached
 
 
 

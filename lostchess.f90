@@ -1026,18 +1026,27 @@ program lostchess
   function move2alg(m) result(alg)
     type(type_move)::m
     character(len=5)::alg
-    alg = raw2alg(m%ini)//raw2alg(m%fin)//' '
+    character(len=1),dimension(0:12):: fen_piece = (/' ','P','N','B','R','Q','K','p','n','b','r','q','k'/)
+    alg = raw2alg(m%ini)//raw2alg(m%fin)//fen_piece(m%promotion_pie)
   end function
   
   function alg2move(alg) result(m)
     type(type_move)::m
     character(len=5)::alg
-    integer::ini,fin,m_ind
-    ini=alg2raw(alg(1:2))
-    fin=alg2raw(alg(3:4))
+    integer::ini,fin,m_ind,pie
+    character(len=1),dimension(0:12):: fen_piece = (/' ','P','N','B','R','Q','K','p','n','b','r','q','k'/)
+    
+    ini = alg2raw(alg(1:2))
+    fin = alg2raw(alg(3:4))
+    do pie = 0,12
+      if(alg(5:5) == fen_piece(pie))then
+        exit
+      end if
+    end do
+    
     do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
       m = moves_list(m_ind)
-      if(m%ini == ini .and. m%fin == fin) return
+      if(m%ini == ini .and. m%fin == fin .and. m%promotion_pie == pie) return
     end do
     m = move_null
   end function
@@ -1544,6 +1553,12 @@ program lostchess
 
     PV_length(srch%ply) = srch%ply
 
+    !too much depth
+    if(srch%ply >= ulti_depth-2)then
+      score = static_eval()
+      return
+    end if
+
     !draw rule50
     if(state%rule50 == 100)then
       score = 0
@@ -1634,8 +1649,14 @@ program lostchess
     integer::m_ind,legal_moves,rule50_ind,next_ply
     type(type_move)::m
     alpha = alpha_in
-
     srch%nodes_quies = srch%nodes_quies+1
+    
+    !too much depth
+    if(srch%ply >= ulti_depth-2)then
+      score = static_eval()
+      return
+    end if
+    
     !static eval
     score = static_eval()
     if(score >= beta)then
