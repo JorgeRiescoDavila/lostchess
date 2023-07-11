@@ -109,7 +109,7 @@ program lostchess
     integer,dimension(0:12,0:127)::board
     integer::side
     integer,dimension(0:15)::cp
-    integer,dimension(0:127)::ep
+    integer,dimension(-1:127)::ep
   end type
   type(type_hash_table)::hash_table
   
@@ -178,19 +178,13 @@ program lostchess
   !transposition table
   integer,parameter::TT_size = 2**13
   integer,dimension(0:TT_size-1,0:2)::TT
-  integer::TT_reads!,perft_calling_depth
+  integer::TT_reads
 
   !testing variables
   integer::selected_option,winner  
   
   !init program
   call init()
-  
-  !hash collision
-  call set_fen('8/2p5/3p4/KP4rk/5p2/6P1/4P3/7R b - - 2 3')
-  write(*,*)position_hash
-  call set_fen('8/2p5/3p4/KPr5/4Ppk1/1R6/6P1/8 b - - 2 3')
-  write(*,*)position_hash
   
   do while (.true.)
     write(*,*) 'select options -----------------------------------------------------------------'
@@ -246,20 +240,40 @@ program lostchess
   end subroutine
 
   subroutine init_hash_table()
-    integer::sq,pie,cp_ind
-    hash_table%board(0,0:127) = 0
+    integer::sq,pie,cp_ind,ind
+    integer,dimension(0:848)::runif
+    
+    do ind = 0,848
+      runif(ind) = floor(abs(sin(ind+1.)*2**31))
+    end do
+    ind = 0
+    
+    hash_table%board = 0
     do pie = 1,12
       do sq = 0,127
-        hash_table%board(pie,sq) = floor(abs(sin(sq+pie*128+1.4)*2**30))
+        if(iand(sq,136) == 0)then
+          hash_table%board(pie,sq) = runif(ind)
+          ind = ind+1
+        end if
       end do
     end do
-    hash_table%side = floor(abs(sin(1664+1.4)*2**30))
-    do sq = 0,127
-      hash_table%ep(sq) = floor(abs(sin(1665+sq+1.4)*2**30))
-    end do
+    
+    hash_table%side = runif(ind)
+    ind = ind+1
+    
     do cp_ind = 0,15
-      hash_table%cp(cp_ind) = floor(abs(sin(cp_ind+1792+1.4)*2**30))
+      hash_table%cp(cp_ind) = runif(ind)
+      ind = ind+1
     end do
+    
+    hash_table%ep(ob) = 0
+    do sq = 0,127
+      if(iand(sq,136) == 0)then
+        hash_table%ep(sq) = runif(ind)
+        ind = ind+1
+      end if
+    end do
+
   end subroutine
 
   subroutine restart_game()
@@ -1315,8 +1329,8 @@ program lostchess
           write(*,*) nodes,positions(p_ind)%nodes(depth),nodes==positions(p_ind)%nodes(depth)
         end if
       end do
-      ! write(*,*)'unchanged hash',hash_ini == position_hash
-      ! write(*,*)'unchanged fen ',positions(p_ind)%fen == get_fen()
+      write(*,*)'unchanged hash',hash_ini == position_hash
+      write(*,*)'unchanged fen ',positions(p_ind)%fen == get_fen()
     end do
     
     call cpu_time(time_fin)

@@ -15,7 +15,6 @@ Or download the lostchess.exe for 64bits Windows
 * compress moves to integers
 * handle promotions on read move
 * tapered eval
-* RNG for hash
 * return if ultimate depth reached
 
 
