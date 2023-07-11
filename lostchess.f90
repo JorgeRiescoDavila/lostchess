@@ -176,14 +176,21 @@ program lostchess
   type(type_move),dimension(0:ulti_depth-1,0:ulti_depth-1)::PV_table
 
   !transposition table
-  integer,parameter::TT_size = 2**10
+  integer,parameter::TT_size = 2**13
   integer,dimension(0:TT_size-1,0:2)::TT
+  integer::TT_reads!,perft_calling_depth
 
   !testing variables
   integer::selected_option,winner  
   
   !init program
   call init()
+  
+  !hash collision
+  call set_fen('8/2p5/3p4/KP4rk/5p2/6P1/4P3/7R b - - 2 3')
+  write(*,*)position_hash
+  call set_fen('8/2p5/3p4/KPr5/4Ppk1/1R6/6P1/8 b - - 2 3')
+  write(*,*)position_hash
   
   do while (.true.)
     write(*,*) 'select options -----------------------------------------------------------------'
@@ -243,15 +250,15 @@ program lostchess
     hash_table%board(0,0:127) = 0
     do pie = 1,12
       do sq = 0,127
-        hash_table%board(pie,sq) = floor(abs(sin(sq+pie*128+1.1)*2**30))
+        hash_table%board(pie,sq) = floor(abs(sin(sq+pie*128+1.4)*2**30))
       end do
     end do
-    hash_table%side = floor(abs(sin(1664+1.1)*2**30))
+    hash_table%side = floor(abs(sin(1664+1.4)*2**30))
     do sq = 0,127
-      hash_table%ep(sq) = floor(abs(sin(1665+sq+1.1)*2**30))
+      hash_table%ep(sq) = floor(abs(sin(1665+sq+1.4)*2**30))
     end do
     do cp_ind = 0,15
-      hash_table%cp(cp_ind) = floor(abs(sin(cp_ind+1792+1.1)*2**30))
+      hash_table%cp(cp_ind) = floor(abs(sin(cp_ind+1792+1.4)*2**30))
     end do
   end subroutine
 
@@ -964,7 +971,7 @@ program lostchess
     do row=7,0,-1
       write(*,'(A1,I1,A3,8(A3))') ' ',row+1,'  |',board_pie(16*row:16*row+7)
     end do
-    write(*,*) '    ---------------------------------'
+    write(*,*) '    --------------------------'
     write(*,*) '      a  b  c  d  e  f  g  h'
   end subroutine
   
@@ -1020,11 +1027,6 @@ program lostchess
     end do
     m = move_null
   end function
-  
-  ! function moves2algs(moves) result(algs)
-    ! type(type_move),dimension(*)::moves
-    ! character(len=5),dimension(*)
-  ! end function
   
   subroutine write_moves()
     integer::m_ind
@@ -1228,31 +1230,43 @@ program lostchess
 !TESTS
 
   recursive function perft(depth) result(nodes)
-    integer::nodes,depth,m_ind,king_sq,delta_nodes
+    integer::nodes,depth,m_ind,king_sq
     nodes = 0
     if(depth == 0) then
       nodes = 1
       return
     end if
-    ! if(TT(mod(position_hash,TT_size),0) ==  position_hash .and. TT(mod(position_hash,TT_size),1) == depth)then
-      ! nodes = TT(mod(position_hash,TT_size),2)
-      ! return
-    ! end if
+    
+    !read TT
+    if(TT(mod(position_hash,TT_size),0) ==  position_hash .and. TT(mod(position_hash,TT_size),1) == depth)then
+      nodes = TT(mod(position_hash,TT_size),2)
+      TT_reads = TT_reads+nodes
+      return
+    end if
+    
+    !next depth
     call gen_moves()
     do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
       call make_move(moves_list(m_ind))
+        srch%ply = srch%ply+1
         king_sq = state%kings(ieor(1,state%side))
         if(is_attacked(king_sq,state%side))then
           call undo_last_move()
+          srch%ply = srch%ply-1
           cycle
         end if
-        delta_nodes = perft(depth-1)
-        nodes = nodes + delta_nodes
+        nodes = nodes + perft(depth-1)
       call undo_last_move()
+      srch%ply = srch%ply-1
     end do
-    ! TT(mod(position_hash,TT_size),0) = position_hash
-    ! TT(mod(position_hash,TT_size),1) = depth
-    ! TT(mod(position_hash,TT_size),2) = delta_nodes
+    
+    !write TT
+    if(srch%ply >= 3)then !there are no transposition for lower plys
+      TT(mod(position_hash,TT_size),0) = position_hash
+      TT(mod(position_hash,TT_size),1) = depth
+      TT(mod(position_hash,TT_size),2) = nodes
+    end if
+      
   end function
   
   subroutine perft_handler !6.5s
@@ -1285,13 +1299,16 @@ program lostchess
     positions(5)%fen = 'rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8'
     positions(5)%nodes = (/ 44,1486,62379,2103487,89941194,inf /)
     
+    TT = 0
+    srch%ply = 0
+    TT_reads = 0
+    
     call cpu_time(time_ini)
     
     do p_ind = 1,5
       write(*,*) positions(p_ind)%desc
-      ! write(*,*) positions(p_ind)%fen
       call set_fen(positions(p_ind)%fen)
-      hash_ini = hash_position()
+      hash_ini = position_hash
       do depth = 1,6
         if(positions(p_ind)%nodes(depth) < 12000000)then
           nodes = perft(depth)
@@ -1304,8 +1321,20 @@ program lostchess
     
     call cpu_time(time_fin)
     write(*,*)'time: ',time_fin-time_ini
+    write(*,*)'TT entrys/size ',TT_entries(),TT_size
+    write(*,*)'TT skiped nodes ',TT_reads
     
   end subroutine
+
+  function TT_entries() result(cnt)
+  integer::cnt,ind
+  cnt = 0
+  do ind = 0,TT_size-1
+    if(TT(ind,0) /= 0)then
+      cnt = cnt+1
+    end if
+  end do
+  end function
 
 !SEARCH ENGINE
 
@@ -1588,7 +1617,7 @@ program lostchess
 
   recursive function quies(alpha_in,beta) result(score)
     integer::alpha_in,alpha,beta,score
-    integer::m_ind,legal_moves,rule50_ind
+    integer::m_ind,legal_moves,rule50_ind,next_ply
     type(type_move)::m
     alpha = alpha_in
 

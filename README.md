@@ -11,12 +11,12 @@ Or download the lostchess.exe for 64bits Windows
 
 ## Roadmap
 * quiescience buged
+* transposition tables for search
 * compress moves to integers
 * handle promotions on read move
 * tapered eval
-* transposition tables
 * RNG for hash
-* get principal line
+* return if ultimate depth reached
 
 
 
