@@ -1,13 +1,17 @@
 
 program lostchess
   implicit none
+
+  !game length
   integer,parameter::max_moves_per_game = 1024
   integer,parameter::max_moves_listed = 8192
-  !side to move codes
+  
+  !team codes
   integer,parameter::team_white = 0
   integer,parameter::team_black = 1
   integer,parameter::team_none = 2
   integer,parameter::team_both = 3
+  
   !piece codes
   integer,parameter::empty = 0
   integer,parameter::wp = 1
@@ -41,16 +45,13 @@ program lostchess
   logical,parameter,dimension(0:12)::is_pawn = (/ .false., &
   & .true.,.false.,.false.,.false.,.false.,.false., &
   & .true.,.false.,.false.,.false.,.false.,.false. /)
-  ! logical,parameter,dimension(0:12)::is_queen = (/ .false., &
-  ! & .false.,.false.,.false.,.false.,.true.,.false., &
-  ! & .false.,.false.,.false.,.false.,.true.,.false. /)
-  ! logical,parameter,dimension(0:12)::is_bishop = (/ .false., &
-  ! & .false.,.false.,.true.,.false.,.false.,.false., &
-  ! & .false.,.false.,.true.,.false.,.false.,.false. /)
-  ! logical,parameter,dimension(0:12)::is_rook = (/ .false., &
-  ! & .false.,.false.,.false.,.true.,.false.,.false., &
-  ! & .false.,.false.,.false.,.true.,.false.,.false. /)
-  !important tiles
+  !piece directions
+  integer,dimension(0:7),parameter::directions_rook        = (/  1, 16, -1,-16,  0,  0,  0,  0/)
+  integer,dimension(0:7),parameter::directions_bishop      = (/ 15, 17,-15,-17,  0,  0,  0,  0/)
+  integer,dimension(0:7),parameter::directions_rook_bishop = (/  1, 16, -1,-16, 15, 17,-15,-17/)
+  integer,dimension(0:7),parameter::directions_knight      = (/ 14, 18, 31, 33,-14,-18,-31,-33/)
+  
+  !important squares
   integer,parameter::ob = -1
   integer,parameter::a1 = 0
   integer,parameter::b1 = 1
@@ -60,10 +61,6 @@ program lostchess
   integer,parameter::f1 = 5
   integer,parameter::g1 = 6
   integer,parameter::h1 = 7
-  integer,parameter::a2 = 16
-  integer,parameter::h2 = 23
-  integer,parameter::a7 = 96
-  integer,parameter::h7 = 103
   integer,parameter::a8 = 112
   integer,parameter::b8 = 113
   integer,parameter::c8 = 114
@@ -72,27 +69,16 @@ program lostchess
   integer,parameter::f8 = 117
   integer,parameter::g8 = 118
   integer,parameter::h8 = 119
+  
   !castling permissions
   integer,parameter::cp_wk = 1
   integer,parameter::cp_wq = 2
   integer,parameter::cp_bk = 4
   integer,parameter::cp_bq = 8
   integer,parameter::cp_all = cp_wq+cp_wk+cp_bq+cp_bk
-  integer,parameter,dimension(0:127)::cp_table = (/ &
-  & cp_all-cp_wq,cp_all,cp_all,cp_all,cp_all-cp_wq-cp_wk,cp_all,cp_all,cp_all-cp_wk,0,0,0,0,0,0,0,0, &
-  & cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,0,0,0,0,0,0,0,0, &
-  & cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,0,0,0,0,0,0,0,0, &
-  & cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,0,0,0,0,0,0,0,0, &
-  & cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,0,0,0,0,0,0,0,0, &
-  & cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,0,0,0,0,0,0,0,0, &
-  & cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,cp_all,0,0,0,0,0,0,0,0, &
-  & cp_all-cp_bq,cp_all,cp_all,cp_all,cp_all-cp_bq-cp_bk,cp_all,cp_all,cp_all-cp_bk,0,0,0,0,0,0,0,0 /)
-  !piece directions
-  integer,dimension(0:7),parameter::directions_rook        = (/  1, 16, -1,-16,  0,  0,  0,  0/)
-  integer,dimension(0:7),parameter::directions_bishop      = (/ 15, 17,-15,-17,  0,  0,  0,  0/)
-  integer,dimension(0:7),parameter::directions_rook_bishop = (/  1, 16, -1,-16, 15, 17,-15,-17/)
-  integer,dimension(0:7),parameter::directions_knight      = (/ 14, 18, 31, 33,-14,-18,-31,-33/)
-  
+  integer,dimension(0:127)::cp_table
+
+  !move structure
   type type_move
     integer::ini
     integer::fin
@@ -105,6 +91,7 @@ program lostchess
   end type
   type(type_move),parameter::move_null = type_move(ob,ob,.FALSE.,empty,.FALSE.,.FALSE.,.FALSE.,empty)
   
+  !hash tables structure
   type type_hash_table
     integer,dimension(0:12,0:127)::board
     integer::side
@@ -116,23 +103,21 @@ program lostchess
   !board
   integer,dimension(0:127)::board
   
-  !state
+  !game state structure
   type type_state
     integer::side
     integer::cp
     integer::ep
     integer::rule50
+    integer::hash
     integer,dimension(0:1)::kings
   end type
   type(type_state)::state
 
-  !hash
-  integer::position_hash
-  
   !number of moves
   integer::ply
   
-  !history
+  !game history
   type type_history
     integer::cp
     integer::ep
@@ -146,7 +131,7 @@ program lostchess
   integer,dimension(0:max_moves_per_game-1)::moves_list_ind
   type(type_move),dimension(0:max_moves_listed-1)::moves_list
   integer,dimension(0:max_moves_listed-1)::moves_score
-    
+  
   !search engine
   integer,parameter::inf = 2**30
   integer,parameter::mate_score = 1000000
@@ -163,7 +148,7 @@ program lostchess
     integer::best_score
     type(type_move)::best_move
     type(type_move),dimension(0:1,0:ulti_depth)::killers
-    ! statistics
+    !statistics
     integer::nodes,nodes_quies,chekmates,stalemates
     real::t_ini
     real::t_cur
@@ -194,7 +179,7 @@ program lostchess
     select case (selected_option)
       case (1)
         call restart_game()
-        call write_board_pretty()
+        call write_board()
         do while(.true.)
           call player_handler()
           winner = check_end()
@@ -205,11 +190,11 @@ program lostchess
         end do
       case (2)
         call restart_game()  
-        call write_board_pretty()        
+        call write_board()        
         do while(.true.)
-          call search_handler(8,3.)
+          call search_handler(6,3.)
           call make_move(srch%best_move)
-          call write_board_pretty()
+          call write_board()
           winner = check_end()
           if(winner /= team_none)then
             write(*,*)'WINNER ',winner
@@ -235,8 +220,16 @@ program lostchess
 !RESTART
 
   subroutine init()
+    !castle permission updater table
+    cp_table = cp_all
+    cp_table(a1) = cp_table(a1) - cp_wq
+    cp_table(e1) = cp_table(e1) - cp_wk - cp_wq
+    cp_table(h1) = cp_table(h1) - cp_wk
+    cp_table(a8) = cp_table(a8) - cp_bq
+    cp_table(e8) = cp_table(e8) - cp_bk - cp_bq
+    cp_table(h8) = cp_table(h8) - cp_bk
     call init_hash_table()
-    call init_search_const()
+    call init_piesq_table()
   end subroutine
 
   subroutine init_hash_table()
@@ -276,23 +269,8 @@ program lostchess
 
   end subroutine
 
-  subroutine restart_game()
-    !restart board
-    board = empty
-    board(a1:h1) = (/wr,wn,wb,wq,wk,wb,wn,wr/)
-    board(a2:h2) = wp
-    board(a7:h7) = bp
-    board(a8:h8) = (/br,bn,bb,bq,bk,bb,bn,br /)
-    !restart state
-    state%side = team_white
-    state%cp = cp_all
-    state%ep = ob
-    state%rule50 = 0
-    state%kings = (/ e1,e8 /)
-    !hash board and state
-    position_hash = hash_position()
-    !restart moves done
-    ply = 0
+  subroutine restart_game()    
+    call set_fen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
     !restart history
     hist%cp = cp_all
     hist%ep = ob
@@ -317,14 +295,19 @@ program lostchess
     hash = ieor(hash,hash_table%cp(state%cp))
   end function
 
+  subroutine inc_hash(inc)
+    integer::inc
+    state%hash = ieor(state%hash,inc)
+  end subroutine
+
 !PLAYER
 
   subroutine player_handler()
     integer::king_sq
     type(type_move)::m=move_null
     character(len=5)::alg
-    call gen_moves()
-    write(*,*) 'write move in long algebraic'
+    call gen_moves(.true.)
+    write(*,'(A5)',advance='no') 'move '
     do while(.true.)
       read*, alg
       m = alg2move(alg)
@@ -337,7 +320,7 @@ program lostchess
         call undo_last_move()
       end if
     end do
-    call write_board_pretty()
+    call write_board()
   end subroutine
 
 !END
@@ -353,7 +336,7 @@ program lostchess
     end if
     !threefold repetition
     do rule50_ind = 1,state%rule50
-      if(hist(ply-rule50_ind)%hash == position_hash)then
+      if(hist(ply-rule50_ind)%hash == state%hash)then
         reps = reps+1
         if(reps == 3)then
           winner = team_both
@@ -361,9 +344,9 @@ program lostchess
         end if
       end if
     end do
-    !checkmate/stalemate
+    !legal move counter
     legal_moves = 0
-    call gen_moves()
+    call gen_moves(.true.)
     do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
       call make_move(moves_list(m_ind))
         if(is_attacked(state%kings(ieor(1,state%side)),state%side))then
@@ -391,17 +374,16 @@ program lostchess
     row = ishft(sq,-4)
   end function
 
-  function there_is_enemy_on(sq)
-    logical::there_is_enemy_on
+  function enemy_on(sq)
+    logical::enemy_on
     integer::sq
-    there_is_enemy_on = get_color(board(sq)) .eq. ieor(1,state%side)
+    enemy_on = get_color(board(sq)) .eq. ieor(1,state%side)
   end function
 
   subroutine add_move(ini,fin,is_capture,promotion_pie,is_pawnstart,is_enpassant,is_castling,captured_pie)
     type(type_move)::m
     integer::ini,fin,promotion_pie,captured_pie,king_sq
-    logical::is_capture,is_pawnstart,is_enpassant,is_castling,is_legal
-    is_legal = .false.
+    logical::is_capture,is_pawnstart,is_enpassant,is_castling
     m%ini = ini
     m%fin = fin
     m%is_capture = is_capture
@@ -415,11 +397,12 @@ program lostchess
     moves_list_ind(ply+1) = moves_list_ind(ply+1) + 1
   end subroutine
   
-  subroutine gen_pawn_moves(ini)
+  subroutine gen_pawn_moves(ini,gen_quiet)
     integer::ini,move_direction,fin,promotion_pie,d_ind
     integer::last_row,start_row
     integer::promo_q,promo_r,promo_b,promo_n
     integer,dimension(0:1)::capture_directions
+    logical::gen_quiet
     
     if(state%side == team_white)then
       move_direction = 16
@@ -446,7 +429,7 @@ program lostchess
     do d_ind=0,1
       fin = ini+capture_directions(d_ind)
       if(iand(fin,136) == 0)then
-        if(there_is_enemy_on(fin))then
+        if(enemy_on(fin))then
           if(get_row(fin) == last_row)then
             call add_move(ini,fin,.TRUE.,promo_q,.FALSE.,.FALSE.,.FALSE.,board(fin))
             call add_move(ini,fin,.TRUE.,promo_r,.FALSE.,.FALSE.,.FALSE.,board(fin))
@@ -461,19 +444,21 @@ program lostchess
         end if
       end if
     end do
-    fin = ini+move_direction
-    if(iand(fin,136) == 0)then
-      if(board(fin) == empty)then
-        if(get_row(fin) == last_row)then
-          call add_move(ini,fin,.TRUE.,promo_q,.FALSE.,.FALSE.,.FALSE.,board(fin))
-          call add_move(ini,fin,.TRUE.,promo_r,.FALSE.,.FALSE.,.FALSE.,board(fin))
-          call add_move(ini,fin,.TRUE.,promo_b,.FALSE.,.FALSE.,.FALSE.,board(fin))
-          call add_move(ini,fin,.TRUE.,promo_n,.FALSE.,.FALSE.,.FALSE.,board(fin))
-        else
-          call add_move(ini,fin,.FALSE.,empty,.FALSE.,.FALSE.,.FALSE.,empty)
-          fin = ini+2*move_direction
-          if(get_row(ini) == start_row .and. board(fin)==empty)then
-            call add_move(ini,fin,.FALSE.,empty,.TRUE.,.FALSE.,.FALSE.,empty)
+    if(gen_quiet)then
+      fin = ini+move_direction
+      if(iand(fin,136) == 0)then
+        if(board(fin) == empty)then
+          if(get_row(fin) == last_row)then
+            call add_move(ini,fin,.TRUE.,promo_q,.FALSE.,.FALSE.,.FALSE.,board(fin))
+            call add_move(ini,fin,.TRUE.,promo_r,.FALSE.,.FALSE.,.FALSE.,board(fin))
+            call add_move(ini,fin,.TRUE.,promo_b,.FALSE.,.FALSE.,.FALSE.,board(fin))
+            call add_move(ini,fin,.TRUE.,promo_n,.FALSE.,.FALSE.,.FALSE.,board(fin))
+          else
+            call add_move(ini,fin,.FALSE.,empty,.FALSE.,.FALSE.,.FALSE.,empty)
+            fin = ini+2*move_direction
+            if(get_row(ini) == start_row .and. board(fin)==empty)then
+              call add_move(ini,fin,.FALSE.,empty,.TRUE.,.FALSE.,.FALSE.,empty)
+            end if
           end if
         end if
       end if
@@ -515,32 +500,34 @@ program lostchess
     end if
   end subroutine
 
-  subroutine gen_common_moves(ini,directions,is_slide)
-    integer,intent(in)::ini
+  subroutine gen_common_moves(ini,directions,is_slide,gen_quiet)
     integer,dimension(0:7)::directions
-    integer::dir,dir_ind,fin
-    logical::is_slide
+    integer::dir,dir_ind,fin,ini
+    logical::is_slide,gen_quiet
     do dir_ind = 0,7
       dir = directions(dir_ind)
       if(dir == 0) exit
       fin = ini+dir
-      do while (iand(fin,136) == 0)
+      do while (iand(fin,136) == 0)       
         if(board(fin) == empty)then
-          call add_move(ini,fin,.FALSE.,empty,.FALSE.,.FALSE.,.FALSE.,empty)
-        else if(there_is_enemy_on(fin)) then
+          if(gen_quiet)then
+            call add_move(ini,fin,.FALSE.,empty,.FALSE.,.FALSE.,.FALSE.,empty)
+          end if
+        else if(get_color(board(fin)) == state%side) then
+          exit
+        else
           call add_move(ini,fin,.TRUE.,empty,.FALSE.,.FALSE.,.FALSE.,board(fin))
           exit
-        else
-          exit
-        end if
+        end if       
         if(.not. is_slide) exit
         fin = fin+dir
       end do
     end do
   end subroutine
   
-  subroutine gen_moves()
+  subroutine gen_moves(gen_quiet)
     integer::ini,pie,col
+    logical::gen_quiet
     moves_list_ind(ply+1) = moves_list_ind(ply)
     do ini = 0,127
       if(iand(ini,136) == 0 .and. board(ini) /= empty)then
@@ -548,227 +535,121 @@ program lostchess
         col = get_color(pie)
         if(col == state%side)then
           if(is_queen_bishop(pie))then
-            call gen_common_moves(ini,directions_bishop,.TRUE.)
+            call gen_common_moves(ini,directions_bishop,.TRUE.,gen_quiet)
           end if
           if(is_queen_rook(pie))then
-            call gen_common_moves(ini,directions_rook,.TRUE.)
+            call gen_common_moves(ini,directions_rook,.TRUE.,gen_quiet)
           end if
           if(is_knight(pie))then
-            call gen_common_moves(ini,directions_knight,.FALSE.)
+            call gen_common_moves(ini,directions_knight,.FALSE.,gen_quiet)
           end if
           if(is_king(pie))then
-            call gen_common_moves(ini,directions_rook_bishop,.FALSE.)
+            call gen_common_moves(ini,directions_rook_bishop,.FALSE.,gen_quiet)
           end if
           if(is_pawn(pie))then
-            call gen_pawn_moves(ini)
+            call gen_pawn_moves(ini,gen_quiet)
           end if
         end if
       end if
     end do
-    call gen_castling_moves()
-  end subroutine
-  
-  subroutine gen_pawn_good(ini)
-    integer::ini,move_direction,fin,promotion_pie,d_ind
-    integer::last_row,start_row,promo_q
-    integer,dimension(0:1)::capture_directions
-    
-    if(state%side == team_white)then
-      move_direction = 16
-      capture_directions = (/15,17/)
-      last_row = 7
-      start_row = 1
-      promo_q = wq
+    if(gen_quiet)then
+      call gen_castling_moves()
     end if
-    
-    if(state%side == team_black)then
-      move_direction = -16
-      capture_directions = (/-15,-17/)
-      last_row = 0
-      start_row = 6
-      promo_q = bq
-    end if
-    
-    do d_ind=0,1
-      fin = ini+capture_directions(d_ind)
-      if(iand(fin,136) == 0)then
-        if(there_is_enemy_on(fin))then
-          if(get_row(fin) == last_row)then
-            call add_move(ini,fin,.TRUE.,promo_q,.FALSE.,.FALSE.,.FALSE.,board(fin))
-          else      
-            call add_move(ini,fin,.TRUE.,empty,.FALSE.,.FALSE.,.FALSE.,board(fin))
-          end if
-        end if
-      end if
-    end do
-    fin = ini+move_direction
-    if(iand(fin,136) == 0)then
-      if(board(fin) == empty)then
-        if(get_row(fin) == last_row)then
-          call add_move(ini,fin,.TRUE.,promo_q,.FALSE.,.FALSE.,.FALSE.,board(fin))
-        end if
-      end if
-    end if
-  end subroutine
-  
-  subroutine gen_common_good(ini,directions,is_slide)
-    integer,intent(in)::ini
-    integer,dimension(0:7)::directions
-    integer::dir,dir_ind,fin
-    logical::is_slide
-    do dir_ind = 0,7
-      dir = directions(dir_ind)
-      if(dir == 0) exit
-      fin = ini+dir
-      do while (iand(fin,136) == 0)
-        if(board(fin) == empty)then
-        else if(there_is_enemy_on(fin)) then
-          if(.not. is_pawn(board(fin)))then
-            call add_move(ini,fin,.TRUE.,empty,.FALSE.,.FALSE.,.FALSE.,board(fin))
-          end if  
-          exit
-        else
-          exit
-        end if
-        if(.not. is_slide) exit
-        fin = fin+dir
-      end do
-    end do
-  end subroutine
-  
-  subroutine gen_good_moves()
-    integer::ini,pie,col
-    moves_list_ind(ply+1) = moves_list_ind(ply)
-    do ini = 0,127
-      if(iand(ini,136) == 0 .and. board(ini) /= empty)then
-        pie = board(ini)
-        col = get_color(pie)
-        if(col == state%side)then
-          if(is_queen_bishop(pie))then
-            call gen_common_good(ini,directions_bishop,.TRUE.)
-          end if
-          if(is_queen_rook(pie))then
-            call gen_common_good(ini,directions_rook,.TRUE.)
-          end if
-          if(is_knight(pie))then
-            call gen_common_good(ini,directions_knight,.FALSE.)
-          end if
-          if(is_king(pie))then
-            call gen_common_good(ini,directions_rook_bishop,.FALSE.)
-          end if
-          if(is_pawn(pie))then
-            call gen_pawn_good(ini)
-          end if
-        end if
-      end if
-    end do
   end subroutine
   
   subroutine make_move(m)
     type(type_move)::m
+    integer,dimension(0:1)::pawn_dir = (/ 16,-16 /)
+    integer::ep_pawn
     
+    !copy state
     hist(ply)%cp = state%cp
     hist(ply)%ep = state%ep
     hist(ply)%rule50 = state%rule50
-    hist(ply)%hash = position_hash
+    hist(ply)%hash = state%hash
     hist(ply)%move = m
     
+    !rule50
     if(m%is_capture .or. is_pawn(board(m%ini)))then
       state%rule50 = 0
     else
       state%rule50 = state%rule50 +1
     end if    
-
     
-    if(is_king(board(m%ini)))then
-      if(get_color(board(m%ini)) == team_white)then
-        state%kings(team_white) = m%fin
-      end if
-      if(get_color(board(m%ini)) == team_black)then
-        state%kings(team_black) = m%fin
-      end if
-    end if
-    
-    position_hash = ieor(position_hash,hash_table%cp(state%cp))
-    state%cp = iand(state%cp,cp_table(m%ini))
-    state%cp = iand(state%cp,cp_table(m%fin))
-    position_hash = ieor(position_hash,hash_table%cp(state%cp))
-    
-    position_hash = ieor(position_hash,hash_table%board(board(m%ini),m%ini))
-    position_hash = ieor(position_hash,hash_table%board(board(m%fin),m%fin))
+    !board
+    call inc_hash(hash_table%board(board(m%ini),m%ini))
+    call inc_hash(hash_table%board(board(m%fin),m%fin))
     board(m%fin) = board(m%ini)
     board(m%ini) = empty
-    position_hash = ieor(position_hash,hash_table%board(board(m%ini),m%ini))
-    position_hash = ieor(position_hash,hash_table%board(board(m%fin),m%fin))
+    call inc_hash(hash_table%board(board(m%fin),m%fin))
     
-    position_hash = ieor(position_hash,hash_table%ep(state%ep))
-    if(m%is_pawnstart)then
-      if(state%side == team_white)then
-        state%ep = m%ini+16
-      end if
-      if(state%side == team_black)then
-        state%ep = m%ini-16
-      end if
-    else
-      state%ep = ob
-    end if
-    position_hash = ieor(position_hash,hash_table%ep(state%ep))
-    
-    if(m%is_enpassant)then
-      if(state%side == team_white)then
-        position_hash = ieor(position_hash,hash_table%board(board(m%fin-16),m%fin-16))
-        board(m%fin-16) = empty
-        position_hash = ieor(position_hash,hash_table%board(board(m%fin-16),m%fin-16))
-      end if
-      if(state%side == team_black)then
-        position_hash = ieor(position_hash,hash_table%board(board(m%fin+16),m%fin+16))
-        board(m%fin+16) = empty
-        position_hash = ieor(position_hash,hash_table%board(board(m%fin-16),m%fin-16))
-      end if
-    end if
-    
-    
+    !board castling
     if(m%is_castling)then
       select case (m%fin)
         case (c1)
-          position_hash = ieor(position_hash,hash_table%board(board(a1),a1))
-          position_hash = ieor(position_hash,hash_table%board(board(d1),d1))
+          call inc_hash(hash_table%board(wr,a1))
+          call inc_hash(hash_table%board(wr,d1))
           board(d1) = board(a1)
           board(a1) = empty
-          position_hash = ieor(position_hash,hash_table%board(board(a1),a1))
-          position_hash = ieor(position_hash,hash_table%board(board(d1),d1))
+          call inc_hash(hash_table%board(wr,d1))
         case (g1)
-          position_hash = ieor(position_hash,hash_table%board(board(f1),f1))
-          position_hash = ieor(position_hash,hash_table%board(board(h1),h1))
+          call inc_hash(hash_table%board(wr,f1))
+          call inc_hash(hash_table%board(wr,h1))
           board(f1) = board(h1)
           board(h1) = empty
-          position_hash = ieor(position_hash,hash_table%board(board(f1),f1))
-          position_hash = ieor(position_hash,hash_table%board(board(h1),h1))
+          call inc_hash(hash_table%board(wr,h1))
         case (c8)
-          position_hash = ieor(position_hash,hash_table%board(board(a8),a8))
-          position_hash = ieor(position_hash,hash_table%board(board(d8),d8))
+          call inc_hash(hash_table%board(br,a8))
+          call inc_hash(hash_table%board(br,d8))
           board(d8) = board(a8)
           board(a8) = empty
-          position_hash = ieor(position_hash,hash_table%board(board(a8),a8))
-          position_hash = ieor(position_hash,hash_table%board(board(d8),d8))
+          call inc_hash(hash_table%board(br,d8))
         case (g8)
-          position_hash = ieor(position_hash,hash_table%board(board(f8),f8))
-          position_hash = ieor(position_hash,hash_table%board(board(h8),h8))
+          call inc_hash(hash_table%board(br,f8))
+          call inc_hash(hash_table%board(br,h8))
           board(f8) = board(h8)
-          board(h8) = empty  
-          position_hash = ieor(position_hash,hash_table%board(board(f8),f8))
-          position_hash = ieor(position_hash,hash_table%board(board(h8),h8))
+          board(h8) = empty
+          call inc_hash(hash_table%board(br,h8))          
         case default
       end select
     end if
     
-    if(m%promotion_pie /= empty)then
-      position_hash = ieor(position_hash,hash_table%board(board(m%fin),m%fin))
-      board(m%fin) = m%promotion_pie
-      position_hash = ieor(position_hash,hash_table%board(board(m%fin),m%fin))
+    !board enpassant
+    if(m%is_enpassant)then
+      ep_pawn = m%fin-pawn_dir(state%side)
+      call inc_hash(hash_table%board(board(ep_pawn),ep_pawn))
+      board(ep_pawn) = empty
     end if
     
-    position_hash = ieor(position_hash,hash_table%side)
+    !board promotion
+    if(m%promotion_pie /= empty)then
+      call inc_hash(hash_table%board(board(m%fin),m%fin))
+      board(m%fin) = m%promotion_pie
+      call inc_hash(hash_table%board(board(m%fin),m%fin))
+    end if
+    
+    !castling permission
+    call inc_hash(hash_table%cp(state%cp))
+    state%cp = iand(state%cp,cp_table(m%ini))
+    state%cp = iand(state%cp,cp_table(m%fin))
+    call inc_hash(hash_table%cp(state%cp))
+    
+    !enpassant
+    call inc_hash(hash_table%ep(state%ep))
+    if(m%is_pawnstart)then
+      state%ep = m%ini+pawn_dir(state%side)
+    else
+      state%ep = ob
+    end if
+    call inc_hash(hash_table%ep(state%ep))
+    
+    !king square
+    if(is_king(board(m%fin)))then
+      state%kings(state%side) = m%fin
+    end if
+    
+    !side
+    call inc_hash(hash_table%side)
     state%side = ieor(1,state%side)
 
     ply = ply + 1
@@ -777,40 +658,26 @@ program lostchess
   
   subroutine undo_last_move()
     type(type_move)::m
+    integer,dimension(0:1)::pawn = (/ wp,bp /)
+    
+    !restore state
     ply = ply-1
     m = hist(ply)%move
     state%cp = hist(ply)%cp
     state%ep = hist(ply)%ep
     state%rule50 = hist(ply)%rule50
-    position_hash = hist(ply)%hash
-    
-    if(is_king(board(m%fin)))then
-      if(get_color(board(m%fin)) == team_white)then
-        state%kings(team_white) = m%ini
-      end if
-      if(get_color(board(m%fin)) == team_black)then
-        state%kings(team_black) = m%ini
-      end if
-    end if
-    
-    ! write(*,*)'undo',m
+    state%hash = hist(ply)%hash
     state%side = ieor(1,state%side)
-    
-    board(m%ini) = board(m%fin)
-    board(m%fin) = empty
-    if(m%is_capture)then
-      board(m%fin) = m%captured_pie
+
+    !board
+    if(m%promotion_pie == empty)then
+      board(m%ini) = board(m%fin)
+    else
+      board(m%ini) = pawn(state%side)
     end if
-    
-    if(m%promotion_pie /= empty)then
-      if(state%side == team_white)then
-        board(m%ini) = wp
-      end if
-      if(state%side == team_black)then
-        board(m%ini) = bp
-      end if
-    end if
-    
+    board(m%fin) = m%captured_pie
+
+    !castling
     if(m%is_castling)then
       select case (m%fin)
         case (c1)
@@ -828,15 +695,21 @@ program lostchess
         case default
       end select
     end if
-  
-  if(m%is_enpassant)then
-    if(state%side == team_white)then
-      board(m%fin-16) = bp
+    
+    !enpassant
+    if(m%is_enpassant)then
+      if(state%side == team_white)then
+        board(m%fin-16) = bp
+      end if
+      if(state%side == team_black)then
+        board(m%fin+16) = wp
+      end if
     end if
-    if(state%side == team_black)then
-      board(m%fin+16) = wp
+
+    !kings
+    if(is_king(board(m%ini)))then
+      state%kings(state%side) = m%ini
     end if
-  end if
 
   end subroutine
   
@@ -944,56 +817,26 @@ program lostchess
       board(16*row:16*row+15) = rows(7-row,0:15)
     end do
   end subroutine
-
-  subroutine write_board_numbers()
-    integer,dimension(0:127)::board
-    integer::ind,row 
-    do ind=0,127
-      board(ind) = ind
-    end do
-    write(*,*) 'board_numbers'
-    write(*,*) '    ---------------------------------'
-    do row=0,7
-      write(*,'(A1,I1,A3,16(I4))') ' ',row+1,'  |',board(16*row:16*row+15)
-    end do
-    write(*,*) '    ---------------------------------'
-    write(*,*) '       a   b   c   d   e   f   g   h'
-  end subroutine
   
-  subroutine write_board_raw()
-    integer::row
-    write(*,*) 'board'
-    do row=0,7
-      write(*,'(A1,I1,A3,16(I4))') ' ',row+1,'  |',board(16*row:16*row+15)
-    end do
-    write(*,*) '    ---------------------------------'
-    write(*,*) '       a   b   c   d   e   f   g   h'
-    write(*,*) 'state%side', state%side
-    write(*,*) 'state%cp',state%cp
-    write(*,*) 'state%ep', state%ep
-    write(*,*) 'position_hash' ,position_hash
-  end subroutine
-  
-  subroutine write_board_pretty()
+  subroutine write_board()
     integer::row,sq
     character(len=1),dimension(0:127)::board_pie
     character(len=1),dimension(0:12):: fen_piece = (/'-','P','N','B','R','Q','K','p','n','b','r','q','k'/)
-    do sq=0,127
+    do sq = 0,127
       board_pie(sq) = fen_piece(board(sq))
     end do
     write(*,*)get_fen()
     do row=7,0,-1
-      write(*,'(A1,I1,A3,8(A3))') ' ',row+1,'  |',board_pie(16*row:16*row+7)
+      write(*,'(a1,i1,a3,8(a3))') ' ',row+1,'  |',board_pie(16*row:16*row+7)
     end do
     write(*,*) '    --------------------------'
     write(*,*) '      a  b  c  d  e  f  g  h'
   end subroutine
   
-  subroutine write_board(board)
+  subroutine write_board_raw(board)
     integer,dimension(0:127)::board
     integer::row
-    write(*,*) '    ---------------------------------'
-    do row=0,7
+    do row = 7,0,-1
       write(*,'(A1,I1,A3,16(I4))') ' ',row+1,'  |',board(16*row:16*row+15)
     end do
     write(*,*) '    ---------------------------------'
@@ -1061,18 +904,12 @@ program lostchess
     end do
   end subroutine
   
-  subroutine write_piece_value()
-    integer::pie
-    do pie=1,12
-      write(*,*)pie
-      call write_board(srch%piece_sq(pie,0:127))
-    end do
-  end subroutine
-  
+!FEN
+
   function get_fen() result(fen)
     character(len=100)::fen
     integer::emptys,sq,row,col
-    character(len=1),dimension(0:12):: fen_piece = (/'-','P','N','B','R','Q','K','p','n','b','r','q','k'/)
+    character(len=1),dimension(0:12):: fen_piece = (/' ','P','N','B','R','Q','K','p','n','b','r','q','k'/)
     character(len=1),dimension(0:8):: fen_sq = (/ ' ','1','2','3','4','5','6','7','8' /)
     character(len=3),dimension(0:1):: fen_side = (/ 'w','b'/)
     character(len=4)::fen_cp
@@ -1246,11 +1083,11 @@ program lostchess
     end do
 
     !get position hash
-    position_hash = hash_position()
+    state%hash = hash_position()
     
   end subroutine
   
-!TESTS
+!PERFT
 
   recursive function perft(depth) result(nodes)
     integer::nodes,depth,m_ind,king_sq
@@ -1261,14 +1098,14 @@ program lostchess
     end if
     
     !read TT
-    if(TT(mod(position_hash,TT_size),0) ==  position_hash .and. TT(mod(position_hash,TT_size),1) == depth)then
-      nodes = TT(mod(position_hash,TT_size),2)
+    if(TT(mod(state%hash,TT_size),0) ==  state%hash .and. TT(mod(state%hash,TT_size),1) == depth)then
+      nodes = TT(mod(state%hash,TT_size),2)
       TT_reads = TT_reads+nodes
       return
     end if
     
     !next depth
-    call gen_moves()
+    call gen_moves(.true.)
     do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
       call make_move(moves_list(m_ind))
         srch%ply = srch%ply+1
@@ -1285,9 +1122,9 @@ program lostchess
     
     !write TT
     if(srch%ply >= 3)then !there are no transposition for lower plys
-      TT(mod(position_hash,TT_size),0) = position_hash
-      TT(mod(position_hash,TT_size),1) = depth
-      TT(mod(position_hash,TT_size),2) = nodes
+      TT(mod(state%hash,TT_size),0) = state%hash
+      TT(mod(state%hash,TT_size),1) = depth
+      TT(mod(state%hash,TT_size),2) = nodes
     end if
       
   end function
@@ -1331,14 +1168,14 @@ program lostchess
     do p_ind = 1,5
       write(*,*) positions(p_ind)%desc
       call set_fen(positions(p_ind)%fen)
-      hash_ini = position_hash
+      hash_ini = state%hash
       do depth = 1,6
         if(positions(p_ind)%nodes(depth) < 12000000)then
           nodes = perft(depth)
           write(*,*) nodes,positions(p_ind)%nodes(depth),nodes==positions(p_ind)%nodes(depth)
         end if
       end do
-      write(*,*)'unchanged hash',hash_ini == position_hash
+      write(*,*)'unchanged hash',hash_ini == state%hash
       write(*,*)'unchanged fen ',positions(p_ind)%fen == get_fen()
     end do
     
@@ -1348,6 +1185,8 @@ program lostchess
     write(*,*)'TT skiped nodes ',TT_reads
     
   end subroutine
+
+!TRANSPOSITION TABLES
 
   function TT_entries() result(cnt)
   integer::cnt,ind
@@ -1361,7 +1200,7 @@ program lostchess
 
 !SEARCH ENGINE
 
-  subroutine init_search_const()
+  subroutine init_piesq_table()
     integer::p_ind
     srch%piece_value = (/ 0,100,310,320,500,950,100000,100,310,320,500,950,100000 /)
   
@@ -1426,7 +1265,7 @@ program lostchess
       &   20, 30, 10,  0,  0, 10, 30, 20,  0,0,0,0,0,0,0,0 /)
       
     srch%piece_sq(7:12,0:127) = srch%piece_sq(1:6,0:127)
-    do p_ind=7,12
+    do p_ind=1,6
       call mirror(srch%piece_sq(p_ind,0:127))
     end do
   end subroutine
@@ -1567,7 +1406,7 @@ program lostchess
     
     !draw threefold
     do rule50_ind = 1,state%rule50
-      if(hist(ply-rule50_ind)%hash == position_hash)then
+      if(hist(ply-rule50_ind)%hash == state%hash)then
         score = 0
         return
       end if
@@ -1582,7 +1421,7 @@ program lostchess
     end if
     
     !generate moves
-    call gen_moves()
+    call gen_moves(.true.)
     
     !set moves scores
     call score_moves()
@@ -1668,8 +1507,8 @@ program lostchess
     end if
     
     !generate moves
-    call gen_good_moves()
-    
+    call gen_moves(.false.)
+        
     !set moves scores
     call score_moves()
     
@@ -1682,6 +1521,7 @@ program lostchess
           srch%ply = srch%ply-1
           cycle
         end if
+        ! write(*,*) move2alg(m),srch%ply
         score = -quies(-beta,-alpha)
       call undo_last_move()
       srch%ply = srch%ply-1

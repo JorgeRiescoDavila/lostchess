@@ -10,7 +10,6 @@ start lostchess.exe
 Or download the lostchess.exe for 64bits Windows
 
 ## Roadmap
-* quiescience buged
 * transposition tables for search
 * compress moves to integers
 * tapered eval
