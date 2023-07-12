@@ -144,7 +144,8 @@ program lostchess
     integer,dimension(0:12)::piece_value
     !variabless
     integer::ss_material(0:1) 
-    integer::ss_position(0:1)
+    integer::ss_position_mg(0:1)
+    integer::ss_position_eg(0:1)
     integer::ply
     integer::best_score
     type(type_move)::best_move
@@ -1303,21 +1304,34 @@ program lostchess
   end subroutine
    
   function static_eval() result(white_score)
-    integer::white_score,sq,pie,col
+    integer::white_score,sq,pie,col,opening,endgame,phase
+    integer,dimension(0:12)::pie_phase = (/ 0, 0,1,1,2,4,0, 0,1,1,2,4,0 /)
     srch%ss_material = 0
-    srch%ss_position = 0
+    srch%ss_position_mg = 0
+    srch%ss_position_eg = 0
+    
+    phase = 32
+    
     do sq = 0,127
       if(iand(sq,136) == 0)then
         pie = board(sq)
         if(pie /= empty)then
           col = get_color(pie)
           srch%ss_material(col) = srch%ss_material(col) + srch%piece_value(pie)
-          srch%ss_position(col) = srch%ss_position(col) + srch%piesq_mg(pie,sq)
+          srch%ss_position_mg(col) = srch%ss_position_mg(col) + srch%piesq_mg(pie,sq)
+          srch%ss_position_eg(col) = srch%ss_position_eg(col) + srch%piesq_eg(pie,sq)
+          phase = phase - pie*pie_phase(pie)
         end if
       end if
     end do
+    
+    phase =  (phase * 256 + 16) / 32
+    
+    opening = srch%ss_position_mg(team_white) - srch%ss_position_mg(team_black)
+    endgame = srch%ss_position_eg(team_white) - srch%ss_position_eg(team_black)
     white_score = srch%ss_material(team_white) - srch%ss_material(team_black) &
-              & + srch%ss_position(team_white) - srch%ss_position(team_black)
+              & + (((opening * (256 - phase)) + (endgame * phase)) / 256 )
+              
     if(state%side == team_black) white_score = -white_score         
   end function
  
