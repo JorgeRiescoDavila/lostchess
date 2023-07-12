@@ -1177,8 +1177,8 @@ program lostchess
           write(*,*) nodes,positions(p_ind)%nodes(depth),nodes==positions(p_ind)%nodes(depth)
         end if
       end do
-      write(*,*)'unchanged hash',hash_ini == state%hash
-      write(*,*)'unchanged fen ',positions(p_ind)%fen == get_fen()
+      write(*,'(A14,L12)')'unchanged hash',hash_ini == state%hash
+      write(*,'(A14,L12)')'unchanged fen ',positions(p_ind)%fen == get_fen()
     end do
     
     call cpu_time(time_fin)
