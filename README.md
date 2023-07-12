@@ -11,7 +11,6 @@ Or download the lostchess.exe for 64bits Windows
 
 ## Roadmap
 * transposition tables for search
-* compress moves to integers
 * tapered eval
 
 
