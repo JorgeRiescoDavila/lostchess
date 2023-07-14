@@ -5,13 +5,13 @@ program lostchess
   !game length
   integer,parameter::max_moves_per_game = 1024
   integer,parameter::max_moves_listed = 8192
-  
+
   !team codes
   integer,parameter::team_white = 0
   integer,parameter::team_black = 1
   integer,parameter::team_none = 2
   integer,parameter::team_both = 3
-  
+
   !piece codes
   integer,parameter::empty = 0
   integer,parameter::wp = 1
@@ -50,7 +50,7 @@ program lostchess
   integer,dimension(0:7),parameter::directions_bishop      = (/ 15, 17,-15,-17,  0,  0,  0,  0/)
   integer,dimension(0:7),parameter::directions_rook_bishop = (/  1, 16, -1,-16, 15, 17,-15,-17/)
   integer,dimension(0:7),parameter::directions_knight      = (/ 14, 18, 31, 33,-14,-18,-31,-33/)
-  
+
   !important squares
   integer,parameter::ob = -1
   integer,parameter::a1 = 0
@@ -69,7 +69,7 @@ program lostchess
   integer,parameter::f8 = 117
   integer,parameter::g8 = 118
   integer,parameter::h8 = 119
-  
+
   !castling permissions
   integer,parameter::cp_wk = 1
   integer,parameter::cp_wq = 2
@@ -90,7 +90,7 @@ program lostchess
     integer::captured_pie
   end type
   type(type_move),parameter::move_null = type_move(ob,ob,.FALSE.,empty,.FALSE.,.FALSE.,.FALSE.,empty)
-  
+
   !hash tables structure
   type type_hash_table
     integer,dimension(0:12,0:127)::board
@@ -99,10 +99,10 @@ program lostchess
     integer,dimension(-1:127)::ep
   end type
   type(type_hash_table)::hash_table
-  
+
   !board
   integer,dimension(0:127)::board
-  
+
   !game state structure
   type type_state
     integer::side
@@ -116,7 +116,7 @@ program lostchess
 
   !number of moves
   integer::ply
-  
+
   !game history
   type type_history
     integer::cp
@@ -131,7 +131,7 @@ program lostchess
   integer,dimension(0:max_moves_per_game-1)::moves_list_ind
   type(type_move),dimension(0:max_moves_listed-1)::moves_list
   integer,dimension(0:max_moves_listed-1)::moves_score
-  
+
   !search engine
   integer,parameter::inf = 2**30
   integer,parameter::mate_score = 1000000
@@ -163,16 +163,21 @@ program lostchess
   type(type_move),dimension(0:ulti_depth-1,0:ulti_depth-1)::PV_table
 
   !transposition table
+  !aparently storing all nodes as exact is better, for some reason nodes go down from 77k to 67k
+  !it can be caused becuase this is a way to narrow window's search, so maybe it can malfunciton 
+  integer,parameter::node_is_pv = 0
+  integer,parameter::node_is_alpha = 0
+  integer,parameter::node_is_beta = 0
   integer,parameter::TT_size = 2**13
-  integer,dimension(0:TT_size-1,0:2)::TT
-  integer::TT_reads
+  integer,dimension(0:TT_size-1,0:3)::TT
+  integer::TT_reads,TT_saves
 
   !testing variables
   integer::selected_option,winner  
-  
+
   !init program
   call init()
-  
+
   do while (.true.)
     write(*,*) 'select options -----------------------------------------------------------------'
     write(*,*) '1 PVP | 2 PVE | 3 PerfTest'
@@ -216,7 +221,7 @@ program lostchess
         exit
     end select
   end do
-  
+
   contains
 
 !RESTART
@@ -282,7 +287,7 @@ program lostchess
     moves_list_ind = 0
     moves_list = move_null
   end subroutine
-  
+
   function hash_position() result(hash)
     integer::hash,sq,pie
     hash = 0
@@ -398,7 +403,7 @@ program lostchess
     moves_list(moves_list_ind(ply+1)) = m
     moves_list_ind(ply+1) = moves_list_ind(ply+1) + 1
   end subroutine
-  
+
   subroutine gen_pawn_moves(ini,gen_quiet)
     integer::ini,move_direction,fin,promotion_pie,d_ind
     integer::last_row,start_row
@@ -526,7 +531,7 @@ program lostchess
       end do
     end do
   end subroutine
-  
+
   subroutine gen_moves(gen_quiet)
     integer::ini,pie,col
     logical::gen_quiet
@@ -558,7 +563,7 @@ program lostchess
       call gen_castling_moves()
     end if
   end subroutine
-  
+
   subroutine make_move(m)
     type(type_move)::m
     integer,dimension(0:1)::pawn_dir = (/ 16,-16 /)
@@ -657,7 +662,7 @@ program lostchess
     ply = ply + 1
     moves_list_ind(ply+1) = moves_list_ind(ply)
   end subroutine
-  
+
   subroutine undo_last_move()
     type(type_move)::m
     integer,dimension(0:1)::pawn = (/ wp,bp /)
@@ -714,7 +719,7 @@ program lostchess
     end if
 
   end subroutine
-  
+
   function is_attacked(sq,attacking_side)
     logical::is_attacked
     integer::sq,attacking_side
@@ -819,7 +824,7 @@ program lostchess
       board(16*row:16*row+15) = rows(7-row,0:15)
     end do
   end subroutine
-  
+
   subroutine write_board()
     integer::row,sq
     character(len=1),dimension(0:127)::board_pie
@@ -834,7 +839,7 @@ program lostchess
     write(*,*) '    --------------------------'
     write(*,*) '      a  b  c  d  e  f  g  h'
   end subroutine
-  
+
   subroutine write_board_raw(board)
     integer,dimension(0:127)::board
     integer::row
@@ -844,7 +849,7 @@ program lostchess
     write(*,*) '    ---------------------------------'
     write(*,*) '       a   b   c   d   e   f   g   h'    
   end subroutine
-  
+
   function raw2alg(sq) result(alg)
     character(len=2)::alg
     integer::sq
@@ -859,7 +864,7 @@ program lostchess
       &'a8','b8','c8','d8','e8','f8','g8','h8','ob','ob','ob','ob','ob','ob','ob','ob' /)
     alg = raw2alg_table(sq)
   end function
-  
+
   function alg2raw(alg) result(sq)
     character(len=2)::alg
     integer::sq
@@ -867,14 +872,14 @@ program lostchess
       if(raw2alg(sq) == alg)exit
     end do
   end function
-  
+
   function move2alg(m) result(alg)
     type(type_move)::m
     character(len=5)::alg
     character(len=1),dimension(0:12):: fen_piece = (/' ','P','N','B','R','Q','K','p','n','b','r','q','k'/)
     alg = raw2alg(m%ini)//raw2alg(m%fin)//fen_piece(m%promotion_pie)
   end function
-  
+
   function alg2move(alg) result(m)
     type(type_move)::m
     character(len=5)::alg
@@ -895,7 +900,7 @@ program lostchess
     end do
     m = move_null
   end function
-  
+
   subroutine write_moves()
     integer::m_ind
     type(type_move)::m
@@ -905,7 +910,7 @@ program lostchess
       write(*,'(A4,I8,A1,I4,I4,L2,I4,L2,L2,L2,I4)')move2alg(m),m_ind,'|',m
     end do
   end subroutine
-  
+
 !FEN
 
   function get_fen() result(fen)
@@ -971,7 +976,7 @@ program lostchess
     end if
     fen = trim(fen)//' '//adjustl(fen_ply)
   end function
-  
+
   subroutine set_fen(fen_in) 
     character(*)::fen_in
     character(len=100)::fen
@@ -1088,7 +1093,7 @@ program lostchess
     state%hash = hash_position()
     
   end subroutine
-  
+
 !PERFT
 
   recursive function perft(depth) result(nodes)
@@ -1130,7 +1135,7 @@ program lostchess
     end if
       
   end function
-  
+
   subroutine perft_handler !6.5s
     type type_position
       character(len=20)::desc
@@ -1199,6 +1204,50 @@ program lostchess
     end if
   end do
   end function
+
+  function TT_read(depth,alpha,beta) result(score)
+    integer::row,score,alpha,beta,depth
+    row = mod(state%hash,TT_size)
+    if(TT(row,0) ==  state%hash .and. TT(row,1) >= depth)then
+      if(TT(row,3) == node_is_pv)then
+        TT_reads = TT_reads+1
+        score = TT(row,2)
+        return
+      end if
+      if(TT(row,3) == node_is_alpha .and. TT(row,2) <= alpha)then
+        TT_reads = TT_reads+1
+        score = alpha
+        return
+      end if
+      if(TT(row,3) == node_is_beta .and. TT(row,2) >= beta)then
+        TT_reads = TT_reads+1
+        score = beta
+        return
+      end if
+    end if
+    score = inf+1
+  end function
+
+  subroutine TT_save(depth,score,TT_flag)
+    integer::row,depth,score,TT_flag
+    TT_saves = TT_saves+1
+    
+    row = mod(state%hash,TT_size)
+    if(depth >= TT(row,1))then
+      TT(row,0) = state%hash
+      TT(row,1) = depth
+      TT(row,2) = score
+      TT(row,3) = TT_flag
+    end if
+    !why? becuase if for some reason i reach very high depth, that node will last forever
+    !even tought the position wont appear again on the game, so i want overwrite it
+    if(TT(row,0) /= state%hash .and. depth >= TT(row,1)-2)then
+      TT(row,0) = state%hash
+      TT(row,1) = depth
+      TT(row,2) = score
+      TT(row,3) = TT_flag
+    end if
+  end subroutine
 
 !SEARCH ENGINE
 
@@ -1302,7 +1351,7 @@ program lostchess
     end do
     
   end subroutine
-   
+
   function static_eval() result(white_score)
     integer::white_score,sq,pie,col,opening,endgame,phase
     integer,dimension(0:12)::pie_phase = (/ 0, 0,1,1,2,4,0, 0,1,1,2,4,0 /)
@@ -1334,7 +1383,7 @@ program lostchess
               
     if(state%side == team_black) white_score = -white_score         
   end function
- 
+
   function equal_m(m1,m2) result(eq)
     type(type_move)::m1,m2
     logical::eq 
@@ -1357,7 +1406,7 @@ program lostchess
       end if
     end if
   end function
- 
+
   subroutine score_moves()
     integer::m_ind,pie,captured
     type(type_move)::m
@@ -1404,6 +1453,7 @@ program lostchess
     write(*,*)'depth | best move | best score |    time |     nodes |  +q nodes | checkmates | stalemates'
     pv_table = move_null
     call cpu_time(time_start)
+    TT = 0
     !iterate depths
     do d_ind = 1,depth
       call cpu_time(srch%t_ini)
@@ -1420,8 +1470,8 @@ program lostchess
         srch%best_score = alpha_beta(d_ind,-inf,inf)
         call cpu_time(srch%t_cur)
         !write results
-        write(*,'(I4,A14,I13,f10.3,I12,I12,I12,I12)')d_ind,move2alg(srch%best_move),srch%best_score,srch%t_cur-srch%t_ini &
-        & ,srch%nodes,srch%nodes_quies-srch%nodes,srch%chekmates,srch%stalemates
+        write(*,'(I4,A14,I13,f10.3,I12,I12,I12,I12,I12,I12)')d_ind,move2alg(srch%best_move),srch%best_score,srch%t_cur-srch%t_ini &
+        & ,srch%nodes,srch%nodes_quies-srch%nodes,srch%chekmates,srch%stalemates,TT_saves,TT_reads,TT_entries()
         do pv_ind = 0,PV_length(0)-1
           write(*,'(A5)',advance='no') move2alg(PV_table(0,pv_ind))
         end do
@@ -1432,11 +1482,18 @@ program lostchess
 
   recursive function alpha_beta(depth,alpha_in,beta) result(score)
     integer::depth,alpha_in,alpha,beta,score
-    integer::m_ind,legal_moves,rule50_ind,next_ply
+    integer::m_ind,legal_moves,rule50_ind,next_ply,TT_flag
     type(type_move)::m
     alpha = alpha_in
 
+    score = TT_read(depth,alpha,beta)
+    if(score <= inf)then
+      return
+    end if
+
     PV_length(srch%ply) = srch%ply
+
+    TT_flag = node_is_alpha
 
     !too much depth
     if(srch%ply >= ulti_depth-2)then
@@ -1461,7 +1518,6 @@ program lostchess
     !leaf node
     if(depth == 0)then
       srch%nodes = srch%nodes+1
-      ! score = static_eval()
       score = quies(alpha,beta)
       return
     end if
@@ -1492,6 +1548,7 @@ program lostchess
       
       !this position is too good, openent wont choose this path
       if(score >= beta)then
+        call TT_save(depth,beta,node_is_beta)
         srch%killers(1,srch%ply) = srch%killers(0,srch%ply)
         srch%killers(0,srch%ply) = m
         score = beta
@@ -1500,8 +1557,9 @@ program lostchess
       
       !better move found
       if(score > alpha)then
+        TT_flag = node_is_pv
         alpha = score
-        
+
         PV_table(srch%ply,srch%ply) = m
         do next_ply = srch%ply+1,PV_length(srch%ply+1)-1
           pv_table(srch%ply,next_ply) = PV_table(srch%ply+1,next_ply)
@@ -1526,6 +1584,7 @@ program lostchess
       return
     end if
     
+    call TT_save(depth,alpha,TT_flag)
     score = alpha
   end function
 

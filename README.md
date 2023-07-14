@@ -61,6 +61,3 @@ unchanged fen            T
  TT entrys/size         2783        8192
  TT skiped nodes       696299
 ```
-
-## Roadmap
-* transposition tables for search
