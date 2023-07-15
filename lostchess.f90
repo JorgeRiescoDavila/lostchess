@@ -1,9 +1,8 @@
 
 program lostchess
-  ! use iso_fortran_env, only: int64
-
   implicit none  
 
+!MOVE GENERATION DEFINITIONS
 
   !game length
   integer,parameter::max_moves_per_game = 1024
@@ -29,6 +28,7 @@ program lostchess
   integer,parameter::br = 10
   integer,parameter::bq = 11
   integer,parameter::bk = 12
+
   !piece lookups
   integer,parameter,dimension(0:12)::get_color = (/ team_none, &
   & team_white,team_white,team_white,team_white,team_white,team_white, &
@@ -48,6 +48,7 @@ program lostchess
   logical,parameter,dimension(0:12)::is_pawn = (/ .false., &
   & .true.,.false.,.false.,.false.,.false.,.false., &
   & .true.,.false.,.false.,.false.,.false.,.false. /)
+
   !piece directions
   integer,dimension(0:7),parameter::directions_rook        = (/  1, 16, -1,-16,  0,  0,  0,  0/)
   integer,dimension(0:7),parameter::directions_bishop      = (/ 15, 17,-15,-17,  0,  0,  0,  0/)
@@ -85,14 +86,15 @@ program lostchess
   type type_move
     integer::ini
     integer::fin
-    logical::is_capture
-    integer::promotion_pie
-    logical::is_pawnstart
-    logical::is_enpassant
-    logical::is_castling
     integer::captured_pie
+    integer::promotion_pie
+    logical::is_castling
+    logical::is_enpassant
+    logical::is_pawnstart
   end type
-  type(type_move),parameter::move_null = type_move(ob,ob,.FALSE.,empty,.FALSE.,.FALSE.,.FALSE.,empty)
+
+  !null move
+  type(type_move),parameter::move_null = type_move(ob,ob,empty,empty,.FALSE.,.FALSE.,.FALSE.)
 
   !hash tables structure
   type type_hash_table
@@ -115,12 +117,14 @@ program lostchess
     integer(8)::hash
     integer,dimension(0:1)::kings
   end type
+  
+  !game state
   type(type_state)::state
 
   !number of moves
   integer::ply
 
-  !game history
+  !game history structure
   type type_history
     integer::cp
     integer::ep
@@ -128,54 +132,68 @@ program lostchess
     integer(8)::hash
     type(type_move)::move
   end type
+
+  !game history
   type(type_history),dimension(0:max_moves_per_game-1)::hist
 
   !moves list
   integer,dimension(0:max_moves_per_game-1)::moves_list_ind
   type(type_move),dimension(0:max_moves_listed-1)::moves_list
-  integer,dimension(0:max_moves_listed-1)::moves_score
 
-  !search engine
-  integer,parameter::inf = 2**30
-  integer,parameter::mate_score = 100000
-  integer,parameter::ulti_depth = 32
-  !search engine
-  type type_search
-    !constants
+!SEARCH ENGINE DEFINITIONS
+
+  !static evaluation structure
+  type type_eval
     integer,dimension(0:12,0:127)::piesq_mg
     integer,dimension(0:12,0:127)::piesq_eg
     integer,dimension(0:12)::piece_value
-    !variabless
     integer::ss_material(0:1) 
     integer::ss_position_mg(0:1)
     integer::ss_position_eg(0:1)
+  end type
+  
+  !static evaluation
+  type(type_eval)::eval
+
+  !alpha beta bounds
+  integer,parameter::inf = 2**30
+  integer,parameter::mate_score = 100000
+  integer,parameter::ulti_depth = 32
+
+  !search engine structure
+  type type_search
     integer::ply
-    integer::best_score
+    integer::score
     type(type_move)::best_move
-    type(type_move),dimension(0:1,0:ulti_depth)::killers
-    !statistics
-    integer::nodes,nodes_quies,chekmates,stalemates,fh,fhf
+    type(type_move),dimension(0:1,0:ulti_depth-1)::killers
     real::t_ini
     real::t_cur
+    integer::nodes,nodes_quies,chekmates,stalemates,fh,fhf
   end type
+  
+  !search engine
   type(type_search)::srch
+
+  !move scores list
+  integer,dimension(0:max_moves_listed-1)::moves_score
 
   !principal variation table
   integer,dimension(0:ulti_depth-1)::PV_length
   type(type_move),dimension(0:ulti_depth-1,0:ulti_depth-1)::PV_table
 
+!TRANSPOSITION TABLE DEFINITIONS
+
   !transposition table
-  !aparently storing all nodes as exact is better, for some reason nodes go down from 77k to 67k
-  !it can be caused becuase this is a way to narrow window's search, so maybe it can malfunciton 
   integer,parameter::node_is_pv = 0
-  integer,parameter::node_is_alpha = 0
-  integer,parameter::node_is_beta = 0
+  integer,parameter::node_is_alpha = 1
+  integer,parameter::node_is_beta = 2
   integer,parameter::TT_size = 2**16
   integer(8),dimension(0:TT_size-1,0:3)::TT
   integer::TT_reads,TT_saves
 
-  !testing variables
-  integer::selected_option,winner  
+!MAIN LOOP
+
+  integer::selected_option
 
   !init program
   call init()
@@ -189,33 +207,21 @@ program lostchess
       case (1)
         call restart_game()
         call write_board()
-        do while(.true.)
-          call player_handler()
-          winner = check_end()
-          if(winner /= team_none)then
-            write(*,*)'WINNER ',winner
-            exit
-          end if
+        do while(get_winner() == team_none)
+          call read_move()
         end do
+        write(*,*)'Winner 0=w,1=b,3=draw ',get_winner()
       case (2)
         call restart_game()  
         call write_board()        
-        do while(.true.)
-          call search_handler(6,3.)
+        do while(get_winner() == team_none)
+          call search_handler(7,3.)
           call make_move(srch%best_move)
           call write_board()
-          winner = check_end()
-          if(winner /= team_none)then
-            write(*,*)'WINNER ',winner
-            exit
-          end if
-          call player_handler()
-          winner = check_end()
-          if(winner /= team_none)then
-            write(*,*)'WINNER ',winner
-            exit
-          end if
+          if(get_winner() /= team_none) exit
+          call read_move()
         end do
+        write(*,*)'Winner 0=w,1=b,3=draw ',get_winner()
       case (3)
         call restart_game()
         call perft_handler()
@@ -228,7 +234,7 @@ program lostchess
 
   contains
 
-!RESTART
+!GAME
 
   subroutine init()
     !castle permission updater table
@@ -243,113 +249,17 @@ program lostchess
     call init_piesq_table()
   end subroutine
 
-  subroutine init_hash_table()
+  subroutine init_hash_table() 
     integer::sq,pie,cp_ind,ind
-    integer(8),dimension(0:848)::runif
-    integer(8),dimension(0:848)::runif2
-
-    !much better with a more quality prng
-    runif = (/ &
-      & 1368675251, 1891880796,  700317253, 1739708780,  651533054, 2034454733, 1403393136, 1459392435, 1690483370, &
-      &  515898766, 1774492347, 2126099084, 1928990136,  941175464,  614589881,   93915237, 1682327365,  603890448, &
-      &   77824578, 1044779211, 1637743915, 1740701981, 1802680770,   24872660, 1889718487, 1093971559, 1827807901, &
-      &  201034989, 1812439150,  237061379, 1374011684,  867095669,  512912468,  173592560,  915311602, 2096335550, &
-      &  174691649, 1811085459,  895976538, 1291364740,  487833643,  522851953, 1665400754,   95569021,  253069350, &
-      & 1678923300,  628922307,  405260802,   70469241,  301302659,  617044762,  800382971, 2092557816,  170720740, &
-      & 1323407939, 1266501449, 2100661479, 1450633190, 1197698875, 2026857355, 1493622740,   22639567, 1324877131, &
-      &  331865319,  139976822, 1146697312, 1774239402,  957225684, 1259585569, 1342485792,  736700813, 1774929579, &
-      & 1616693891, 1009197804, 1468286637, 1873676712,  479334716,  257022746, 1816810744, 1242124778,  714463002, &
-      & 1680295932,  272783368,  589792906, 1464376093,  992586424,  985911754, 1071507986,  161000905, 1362358246, &
-      & 1425969532, 1204406163,  175123052, 1646772745, 2079909172, 1103029295, 1523952001,  358812253,  450897057, &
-      & 1883585801,  428251962,  184303180,  871297259,  168872712,  327707807,  358690951, 1179009248, 1774558825, &
-      & 1161346830, 1832735179, 1878146682,  672659655, 2138741910,  578713973,  664577404,  478109203,  638507223, &
-      &  662174269,  744869771,  339996977,   69956676,  991076414, 1335023536,    7405682, 1947480647, 1981370246, &
-      & 1728879968,  911889213, 2103521604, 1773681156, 1639445608,  506557139, 1123122198, 1734282179, 1514947212, &
-      & 1221037147,  845501179,  970380948, 1641146629, 1918100650, 1729927056,  862554946,  356471597,  684030059, &
-      &  453795799,  632269886,  592072808,   39315008, 1197532780,  700552620,  930911976,  664241197, 1390467640, &
-      &  529547208,   63163986,  590870270, 1133154655,  854062662,  837245827,  264957692, 1012858234,  461768734, &
-      & 1129659399, 1852283934,  443814975, 1232972618,  584691057,  892642857,  880758452,  771557392, 1093271014, &
-      & 1888012976,  488135845, 1352134201,  698965884,  103772161,  794097625, 1446101864,  977956295,  741743903, &
-      & 1163906952, 1727285306, 1088989154,  555277219, 1504042350, 1236589745, 1429494521, 1225402844,  916401482, &
-      & 1273520557, 1148858044,  494634887, 1386880230, 1912646307, 2131272033, 2092846160,  666724257,  361033912, &
-      & 1866868585,  733536686, 1645942185, 1463408470, 2101625716, 1967410506,  377376420, 2082042893, 1798558203, &
-      &  776960029, 1336311393, 1520133638, 1128169705,   91329782,  348637257,  808469209,  419227013,  800941389, &
-      & 1108131488,  421851252, 1878018706, 1684747861, 1365393682,  498977530, 2058491384,  411323555,  786370240, &
-      & 1580276331,  659150119, 1558682832, 1990893926,  754679093, 1356124838, 1175275737, 1135740051, 1715798236, &
-      & 1481434065,  494625495,  811593617, 1180965475,  980388849,  414224384, 1911357489, 1120482046,  164314072, &
-      &   15628196, 1634952816,  501318511, 2043033107, 1494539244, 2119104635, 2083929149,  315128585, 1373793725, &
-      & 1329944386,  619569047, 1807633336, 1574685114, 1510508678,  559686872, 2009766648,    8274532,  756490359, &
-      &  157644343, 1710374322, 1105834764, 1390244568,  571009286, 1720241988,  267775211,  312167459, 1705118907, &
-      &  809534895, 1343260457, 1350920866, 2052782081, 1907201837, 1652960554, 1414764605, 2121997273, 1595600434, &
-      &  474968201, 1708394436,  644710369, 2147064334,  200402271, 1963200010, 2000643767,  362365252,  319177518, &
-      & 1055057941, 1421227095,  243013990, 1302942106,   26440961, 1208906686,   16618804, 1956836130,  509749934, &
-      &  469855099, 1714850879, 2022591826, 1260672159,  759842508, 1720607579,  196585683, 1642393186,  185558894, &
-      & 1563892861, 1572420420, 1138212377, 2118253011, 1246465578, 1574982123,  208932061,  198399331,   36241262, &
-      & 1273186794, 1323908930, 1613552756,  269939859, 2107344246,  688583843,  452882078, 1054653496, 1541198831, &
-      &  493538432,  814621432, 1774154953,  636555274,  367717727, 1418616810, 1453678043,  494940302,  258131094, &
-      &    6463741,  163582784,  694379663, 1381865788,   33275584, 1268689317,  229373924, 1257648985,  613705225, &
-      &  298245027, 1483471461, 1812434500, 1094171683,  908585755,  474072084, 1608830879,  759676666,  908808591, &
-      &  617676584, 1240846196,  288937466, 1597387965, 1680661494,  626440393, 1452998626, 1249211605, 1352514526, &
-      & 1939374980, 1293411132,  635760990, 1351342715, 1669402521,  971107193, 1360598653, 1021600497,  207608344, &
-      &  559056597,  957550632, 1979552134, 1289072581,  999016145,  998770724, 1193318150,  994775377, 1915288613, &
-      & 1413349757, 1144626648, 1084227657, 1426613940,  767397953,  471749215, 1469511508, 1666971202, 2011396370, &
-      &  863242629, 1190115024,  540780229,  794978229,  764512189, 1558362276, 1307435488, 1768835553, 1323629778, &
-      & 2095868496,  836325077, 2107314822,  130660082,  563435039,  664145559, 1499473107,  486615559,  603683118, &
-      & 1463921297,  845100803,  719656946,   92713341, 1126422330,  248132623, 1068429874,  981645630,  554559708, &
-      &  102249205,  973838634, 1986427334, 1258917958, 1109661635,  687694634, 1947883707,   74569437, 1855620724, &
-      & 1157861777, 1835660856, 1117740594,   44064648, 2013409135, 1693900691,  240850317, 1407600302, 1733653774, &
-      &  262249414, 1611556571,   31043170,  488621028, 2050344900, 1210932003, 1839420181,  262081129,  509989091, &
-      & 1162845655,  242908908,  327097477,  548488053,  318107385, 1789079610, 1382865639,   22645943,  318398656, &
-      & 1288903428,  159514082, 1560355979,  349812128,   97332798,  230137582, 1282895986, 1729712102,  707010134, &
-      & 1658455404, 1552327075,  568690469,    9147826,  494619161,  771044742, 1367817359, 1687039500, 2140631419, &
-      &  934436322, 1683917466, 1863194320, 1980876215,  909957415, 2093958990, 2092997899, 2050035683,  398539797, &
-      &  457137331, 1652348103,  233376211, 1214091511, 1188937674, 1444356906, 1041160832, 1545507444, 1904866530, &
-      &  196853792,  357017975, 1988537821, 1069745844,   78385600,  124018427, 1264799883,  438822637,  681928695, &
-      & 1287838197, 1131806394,  958040300, 1609527574, 1848289373,  711207397, 1627088412, 1820073558, 1006897883, &
-      & 1011692324,  843714584,  529601150,  193653362,  110011313,  783708896, 1127518515,  261602748, 1748856404, &
-      &  413212630,  577719883, 1276398554,  131637272, 1233179052, 1203821236,  643730744, 1747290293, 1886550994, &
-      &  932105648,  553376438, 1921844492,  877522823,  494812329, 1566939119, 2109464455,  409098265, 1408915939, &
-      &  516588622,  698453109, 1058368654, 2027455537,  400059243,  521293517, 1744898491,  948642597, 1164479459, &
-      & 1196005634,  803476364, 1894425159, 1552654458, 2033101128, 1746843125, 1507101051,   21608228, 1970828525, &
-      &  748085850, 1626477655, 1980096341, 1911214003, 1324839334, 1218018017, 1138425583,  598044894, 1000239965, &
-      &   35562766, 1203044340,  338714144,  213962590, 1519515783, 1079071268, 1642502730,  943819983,  214154383, &
-      &  485483187,  576666746,  663224537,  233823726,  490533397,   12166487, 1375145916,  574688759, 1229211900, &
-      & 1039336071, 1926927539, 1747829208,   65541031, 1858981297, 1685390766, 1375902672, 1929833046, 2041586159, &
-      & 1367798769, 2099036341,  548958229, 1337572621,  140779742, 1033037811, 1065536056, 1032117466, 1903149673, &
-      & 1476304735,  263830187, 1011956358, 1917890683, 1190682788, 1045115830, 2121871206,  504182111, 2141351251, &
-      & 2062197543, 1785549991, 1480505012, 1118307649,  912648733, 1345934177, 1963546073,  541141507, 1465181085, &
-      &   44479336, 1324056472, 1763555186, 1337471229, 1400425308,  227556657, 2042909443, 1343440793,   12226849, &
-      & 1158602358,  243041595,  264899034,  579650505, 1459541980, 1138244802, 1303656556, 1792246402, 1975196494, &
-      & 1535595092,  999704175, 1784153779, 2092395985, 1513740011,  584550357, 1884337711, 1781723607, 1169976493, &
-      &  506730255, 1660636896, 1687441285, 1715992348, 1410397575,  293967954,  834012093, 1750963808,  332308931, &
-      & 1948209510,  416218232,  729745794,  832871411, 1820749023,  613147604,  391109575, 1462797014, 1771121107, &
-      & 1639266679,  929545208, 1914677570,  424426096,  929269498, 1230194046, 1486198088,  535621122, 1787931421, &
-      & 2136218848, 1489680225,  127687121, 1685257292,  484944940,  328755494,  573571695,  933862407,  396345121, &
-      &  968783605, 2032225935,   46200306,  509726532, 1158128330, 1471528142,  298788765, 2133833282,  498210918, &
-      & 1476541427, 1125497722,  146887462,  495466826, 1006003123,  117304508, 1271701341,  957589528, 1320873791, &
-      &  909303905, 1778657935, 1432629120, 1817834267,  263161021, 1355368842, 1260863729,  314187877,   96944754, &
-      &  312702613,  882255054,  316474831, 2045166031,   44694171,  384281515, 1472612853,  107622411,  111214481, &
-      &  999553757, 1234639115, 1247490051, 1323176366,  309304612, 1084598753,   56364327,  970456102,  614128207, &
-      &  345936167, 1552613337,  267735120,  243681299, 1824460563,  346532727,  930725588, 2082572948, 1979371680, &
-      &  401417198, 1576533174, 1573889183,  167787651,  449518646, 1993073401,  988002041,  395795242,  752649766, &
-      &  997239895, 1564917503,  130994717, 1088351501, 1191957495, 1734273297,  816007680, 1583159763, 1163896779, &
-      &  959572419,  577356935,  195479170, 1610920079,  888958697,  892730463, 1985132519, 2028795034, 2073052801, &
-      & 1978468401,  817876364, 1985507973, 1959481115, 1011761907,  937034151, 1880052996, 1616828929,  927985794, &
-      & 1766175566,   91773396,  101287804,  667090049,  399948240,  645704978,  649625114,  913803261,  735051348, &
-      & 1332693363,  499986423, 1853244871, 1418909652,  525087801,  189968772, 1028159526, 1433663950,  825350199, &
-      &  825958631, 1374132224, 1776512269, 1663420990, 2134944232, 2125456794, 1503898652,  547912871,  256171456, &
-      & 1693347303, 1081909382, 1870294216, 1826702407,  130834722, 2069032623, 1206596992,  472947606,  597400509, &
-      &  782430017,  955324537,  878830927,  357316804, 1993658758,  692241135,  436414020, 1428159859, 1836980756, &
-      & 1832389024, 1882949310,  109929389, 1608418058, 1665101702, 1583216675,  595712313, 1173808362, 2102661419, &
-      & 1289660028, 1709248639, 1636548224, 1315734498, 1989243061,  100538733, 1811861607, 1482104704,  754766874, &
-      &  611171000,    8556815,  529733985, 2085475007, 1965607736,  242536590,  901851600, 1051305198,  262860582, &
-      &  708548420,  513206713,  475288924, 2030204209,  967133772,  724102234, 1696197022,  771388905,  549843727, &
-      & 1622983668,  208958848,  261411685 /)
-
-    do ind = 0,848
-      runif2(ind) = floor(abs(sin(ind+1.)*2**31))
-      runif2(ind) = ishft(runif2(ind),32)
-      runif(ind) = runif(ind)+runif2(ind)
+    integer(8),dimension(0:849)::r64
+    integer(8),dimension(0:1699)::r32
+    
+    OPEN(1,FILE='r32bitint.txt')
+      READ(1,*) r32(0:1699)
+    CLOSE(1)
+    
+    do ind = 0,849
+      r64(ind) = ishft(r32(2*ind),32)+r32(2*ind+1)
     end do
     
     ind = 0
@@ -358,24 +268,24 @@ program lostchess
     do pie = 1,12
       do sq = 0,127
         if(iand(sq,136) == 0)then
-          hash_table%board(pie,sq) = runif(ind)
+          hash_table%board(pie,sq) = r64(ind)
           ind = ind+1
         end if
       end do
     end do
     
-    hash_table%side = runif(ind)
+    hash_table%side = r64(ind)
     ind = ind+1
     
     do cp_ind = 0,15
-      hash_table%cp(cp_ind) = runif(ind)
+      hash_table%cp(cp_ind) = r64(ind)
       ind = ind+1
     end do
     
     hash_table%ep(ob) = 0
     do sq = 0,127
       if(iand(sq,136) == 0)then
-        hash_table%ep(sq) = runif(ind)
+        hash_table%ep(sq) = r64(ind)
         ind = ind+1
       end if
     end do
@@ -405,19 +315,11 @@ program lostchess
       end if
     end do
     hash = ieor(hash,hash_table%side)
-    hash = ieor(hash,hash_table%ep(state%ep))
     hash = ieor(hash,hash_table%cp(state%cp))
+    hash = ieor(hash,hash_table%ep(state%ep))
   end function
 
-  subroutine inc_hash(inc)
-    integer(8)::inc
-    state%hash = ieor(state%hash,inc)
-  end subroutine
-
-!PLAYER
-
-  subroutine player_handler()
-    integer::king_sq
+  subroutine read_move()
     type(type_move)::m=move_null
     character(len=5)::alg
     call gen_moves(.true.)
@@ -425,22 +327,21 @@ program lostchess
     do while(.true.)
       read*, alg
       m = alg2move(alg)
-      if(.not. equal_m(m,move_null))then
-        call make_move(m)
-          king_sq = state%kings(ieor(1,state%side))
-          if(.not. is_attacked(king_sq,state%side))then
-            exit
-          end if
-        call undo_last_move()
+      if(equal_m(m,move_null))then
+        cycle
       end if
+      call make_move(m)
+      if(in_check(ieor(1,state%side)))then
+        call undo_last_move()
+        cycle
+      end if
+      exit
     end do
     call write_board()
   end subroutine
 
-!END
-
-  function check_end() result(winner)
-    integer::winner,rule50_ind,reps,king_sq,legal_moves,m_ind
+  function get_winner() result(winner)
+    integer::winner,rule50_ind,reps,legal_moves,m_ind
     winner = team_none
     reps = 1
     !50 move rule
@@ -463,7 +364,7 @@ program lostchess
     call gen_moves(.true.)
     do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
       call make_move(moves_list(m_ind))
-        if(is_attacked(state%kings(ieor(1,state%side)),state%side))then
+        if(in_check(ieor(1,state%side)))then
           call undo_last_move()
           cycle
         end if
@@ -472,7 +373,7 @@ program lostchess
     end do
     !checkmate/stalemate
     if(legal_moves == 0)then
-      if(is_attacked(state%kings(state%side),ieor(1,state%side)))then
+      if(in_check(state%side))then
         winner = ieor(1,state%side)
       else
         winner = team_both
@@ -493,20 +394,24 @@ program lostchess
     integer::sq
     enemy_on = get_color(board(sq)) .eq. ieor(1,state%side)
   end function
+  
+  subroutine inc_hash(inc)
+    integer(8)::inc
+    state%hash = ieor(state%hash,inc)
+  end subroutine
 
-  subroutine add_move(ini,fin,is_capture,promotion_pie,is_pawnstart,is_enpassant,is_castling,captured_pie)
+  subroutine add_move(ini,fin,captured_pie,promotion_pie,is_castling,is_enpassant,is_pawnstart)
     type(type_move)::m
-    integer::ini,fin,promotion_pie,captured_pie,king_sq
-    logical::is_capture,is_pawnstart,is_enpassant,is_castling
+    integer::ini,fin,promotion_pie,captured_pie
+    logical::is_castling,is_enpassant,is_pawnstart
     m%ini = ini
     m%fin = fin
-    m%is_capture = is_capture
-    m%promotion_pie = promotion_pie
-    m%is_pawnstart = is_pawnstart
-    m%is_enpassant = is_enpassant
-    m%is_castling = is_castling
     m%captured_pie = captured_pie
-    
+    m%promotion_pie = promotion_pie
+    m%is_castling = is_castling
+    m%is_enpassant = is_enpassant
+    m%is_pawnstart = is_pawnstart
+
     moves_list(moves_list_ind(ply+1)) = m
     moves_list_ind(ply+1) = moves_list_ind(ply+1) + 1
   end subroutine
@@ -545,16 +450,16 @@ program lostchess
       if(iand(fin,136) == 0)then
         if(enemy_on(fin))then
           if(get_row(fin) == last_row)then
-            call add_move(ini,fin,.TRUE.,promo_q,.FALSE.,.FALSE.,.FALSE.,board(fin))
-            call add_move(ini,fin,.TRUE.,promo_r,.FALSE.,.FALSE.,.FALSE.,board(fin))
-            call add_move(ini,fin,.TRUE.,promo_b,.FALSE.,.FALSE.,.FALSE.,board(fin))
-            call add_move(ini,fin,.TRUE.,promo_n,.FALSE.,.FALSE.,.FALSE.,board(fin))
+            call add_move(ini,fin,board(fin),promo_q,.FALSE.,.FALSE.,.FALSE.)
+            call add_move(ini,fin,board(fin),promo_r,.FALSE.,.FALSE.,.FALSE.)
+            call add_move(ini,fin,board(fin),promo_b,.FALSE.,.FALSE.,.FALSE.)
+            call add_move(ini,fin,board(fin),promo_n,.FALSE.,.FALSE.,.FALSE.)
           else      
-            call add_move(ini,fin,.TRUE.,empty,.FALSE.,.FALSE.,.FALSE.,board(fin))
+            call add_move(ini,fin,board(fin),empty,.FALSE.,.FALSE.,.FALSE.)
           end if
         end if
         if(fin == state%ep)then !en passants doesnt have capture flag becuase they are handled separately
-          call add_move(ini,fin,.FALSE.,empty,.FALSE.,.TRUE.,.FALSE.,empty)
+          call add_move(ini,fin,empty,empty,.FALSE.,.TRUE.,.FALSE.)
         end if
       end if
     end do
@@ -563,15 +468,15 @@ program lostchess
       if(iand(fin,136) == 0)then
         if(board(fin) == empty)then
           if(get_row(fin) == last_row)then
-            call add_move(ini,fin,.TRUE.,promo_q,.FALSE.,.FALSE.,.FALSE.,board(fin))
-            call add_move(ini,fin,.TRUE.,promo_r,.FALSE.,.FALSE.,.FALSE.,board(fin))
-            call add_move(ini,fin,.TRUE.,promo_b,.FALSE.,.FALSE.,.FALSE.,board(fin))
-            call add_move(ini,fin,.TRUE.,promo_n,.FALSE.,.FALSE.,.FALSE.,board(fin))
+            call add_move(ini,fin,board(fin),promo_q,.FALSE.,.FALSE.,.FALSE.)
+            call add_move(ini,fin,board(fin),promo_r,.FALSE.,.FALSE.,.FALSE.)
+            call add_move(ini,fin,board(fin),promo_b,.FALSE.,.FALSE.,.FALSE.)
+            call add_move(ini,fin,board(fin),promo_n,.FALSE.,.FALSE.,.FALSE.)
           else
-            call add_move(ini,fin,.FALSE.,empty,.FALSE.,.FALSE.,.FALSE.,empty)
+            call add_move(ini,fin,empty,empty,.FALSE.,.FALSE.,.FALSE.)
             fin = ini+2*move_direction
-            if(get_row(ini) == start_row .and. board(fin)==empty)then
-              call add_move(ini,fin,.FALSE.,empty,.TRUE.,.FALSE.,.FALSE.,empty)
+            if(get_row(ini) == start_row .and. board(fin) == empty)then
+              call add_move(ini,fin,empty,empty,.FALSE.,.FALSE.,.TRUE.)
             end if
           end if
         end if
@@ -584,14 +489,14 @@ program lostchess
       if(iand(state%cp,cp_wq) /= 0)then
         if(board(b1)==empty .and. board(c1)==empty .and. board(d1)==empty) then
           if( .not. is_attacked(e1,team_black) .and. .not. is_attacked(d1,team_black))then
-            call add_move(e1,c1,.FALSE.,empty,.FALSE.,.FALSE.,.TRUE.,empty)
+            call add_move(e1,c1,empty,empty,.TRUE.,.FALSE.,.FALSE.)
           end if
         end if
       end if
       if(iand(state%cp,cp_wk) /= 0)then
         if(board(g1)==empty .and. board(f1)==empty) then
           if( .not. is_attacked(e1,team_black) .and. .not. is_attacked(f1,team_black))then
-            call add_move(e1,g1,.FALSE.,empty,.FALSE.,.FALSE.,.TRUE.,empty)
+            call add_move(e1,g1,empty,empty,.TRUE.,.FALSE.,.FALSE.)
           end if
         end if
       end if
@@ -600,14 +505,14 @@ program lostchess
       if(iand(state%cp,cp_bq) /= 0)then
         if(board(b8)==empty .and. board(c8)==empty .and. board(d8)==empty) then 
           if( .not. is_attacked(e8,team_white) .and. .not. is_attacked(d8,team_white))then
-            call add_move(e8,c8,.FALSE.,empty,.FALSE.,.FALSE.,.TRUE.,empty)
+            call add_move(e8,c8,empty,empty,.TRUE.,.FALSE.,.FALSE.)
           end if
         end if
       end if
       if(iand(state%cp,cp_bk) /= 0)then
         if(board(g8)==empty .and. board(f8)==empty) then
           if( .not. is_attacked(e8,team_white) .and. .not. is_attacked(f8,team_white))then
-            call add_move(e8,g8,.FALSE.,empty,.FALSE.,.FALSE.,.TRUE.,empty)
+            call add_move(e8,g8,empty,empty,.TRUE.,.FALSE.,.FALSE.)
           end if
         end if
       end if
@@ -625,12 +530,12 @@ program lostchess
       do while (iand(fin,136) == 0)       
         if(board(fin) == empty)then
           if(gen_quiet)then
-            call add_move(ini,fin,.FALSE.,empty,.FALSE.,.FALSE.,.FALSE.,empty)
+            call add_move(ini,fin,empty,empty,.FALSE.,.FALSE.,.FALSE.)
           end if
         else if(get_color(board(fin)) == state%side) then
           exit
         else
-          call add_move(ini,fin,.TRUE.,empty,.FALSE.,.FALSE.,.FALSE.,board(fin))
+          call add_move(ini,fin,board(fin),empty,.FALSE.,.FALSE.,.FALSE.)
           exit
         end if       
         if(.not. is_slide) exit
@@ -684,7 +589,7 @@ program lostchess
     hist(ply)%move = m
     
     !rule50
-    if(m%is_capture .or. is_pawn(board(m%ini)))then
+    if(m%captured_pie /= empty .or. is_pawn(board(m%ini)))then
       state%rule50 = 0
     else
       state%rule50 = state%rule50 +1
@@ -827,7 +732,7 @@ program lostchess
 
   end subroutine
 
-  function is_attacked(sq,attacking_side)
+  function is_attacked(sq,attacking_side) !refactor pending
     logical::is_attacked
     integer::sq,attacking_side
     integer,dimension(0:7)::directions
@@ -916,6 +821,12 @@ program lostchess
       end if
     end if
     
+  end function
+
+  function in_check(side)
+    integer::side
+    logical::in_check
+    in_check = is_attacked(state%kings(side),ieor(1,side))
   end function
 
 !INPUT/OUTPUT UTILITIES
@@ -1204,8 +1115,8 @@ program lostchess
 !PERFT
 
   recursive function perft(depth) result(nodes)
-    integer::nodes,depth,m_ind,king_sq
-    integer::row
+    integer::nodes,depth,m_ind,row
+
     nodes = 0
     if(depth == 0) then
       nodes = 1
@@ -1225,8 +1136,7 @@ program lostchess
     do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
       call make_move(moves_list(m_ind))
         srch%ply = srch%ply+1
-        king_sq = state%kings(ieor(1,state%side))
-        if(is_attacked(king_sq,state%side))then
+        if(in_check(ieor(1,state%side)))then
           call undo_last_move()
           srch%ply = srch%ply-1
           cycle
@@ -1237,15 +1147,16 @@ program lostchess
     end do
     
     !write TT
+    row = mod(state%hash,TT_size)
     if(srch%ply >= 3)then !there are no transposition for lower plys
-      TT(mod(state%hash,TT_size),0) = state%hash
-      TT(mod(state%hash,TT_size),1) = depth
-      TT(mod(state%hash,TT_size),2) = nodes
+      TT(row,0) = state%hash
+      TT(row,1) = depth
+      TT(row,2) = nodes
     end if
       
   end function
 
-  subroutine perft_handler !6.5s
+  subroutine perft_handler
     type type_position
       character(len=20)::desc
       character(len=100)::fen
@@ -1361,11 +1272,11 @@ program lostchess
 
 !SEARCH ENGINE
 
-  subroutine init_piesq_table()
+  subroutine init_piesq_table() !refactor pending
     integer::p_ind
-    srch%piece_value = (/ 0,100,310,320,500,950,100000,100,310,320,500,950,100000 /)
+    eval%piece_value = (/ 0,100,310,320,500,950,100000,100,310,320,500,950,100000 /)
   
-    srch%piesq_mg(wp,0:127) = (/ & 
+    eval%piesq_mg(wp,0:127) = (/ & 
       &  0,  0,  0,  0,  0,  0,  0,  0, 0,0,0,0,0,0,0,0, &
       & 50, 50, 50, 50, 50, 50, 50, 50, 0,0,0,0,0,0,0,0, &
       & 10, 10, 20, 30, 30, 20, 10, 10, 0,0,0,0,0,0,0,0, &
@@ -1375,7 +1286,7 @@ program lostchess
       &  5, 10, 10,-20,-20, 10, 10,  5, 0,0,0,0,0,0,0,0, &
       &  0,  0,  0,  0,  0,  0,  0,  0, 0,0,0,0,0,0,0,0 /)
       
-    srch%piesq_mg(wn,0:127) = (/ & 
+    eval%piesq_mg(wn,0:127) = (/ & 
       & -50,-40,-30,-30,-30,-30,-40,-50, 0,0,0,0,0,0,0,0, &
       & -40,-20,  0,  0,  0,  0,-20,-40, 0,0,0,0,0,0,0,0, &
       & -30,  0, 10, 15, 15, 10,  0,-30, 0,0,0,0,0,0,0,0, &
@@ -1385,7 +1296,7 @@ program lostchess
       & -40,-20,  0,  5,  5,  0,-20,-40, 0,0,0,0,0,0,0,0, &
       & -50,-40,-30,-30,-30,-30,-40,-50, 0,0,0,0,0,0,0,0 /)
       
-    srch%piesq_mg(wb,0:127) = (/ & 
+    eval%piesq_mg(wb,0:127) = (/ & 
       &  -20,-10,-10,-10,-10,-10,-10,-20, 0,0,0,0,0,0,0,0, &
       &  -10,  0,  0,  0,  0,  0,  0,-10, 0,0,0,0,0,0,0,0, &
       &  -10,  0,  5, 10, 10,  5,  0,-10, 0,0,0,0,0,0,0,0, &
@@ -1395,7 +1306,7 @@ program lostchess
       &  -10,  5,  0,  0,  0,  0,  5,-10, 0,0,0,0,0,0,0,0, &
       &  -20,-10,-10,-10,-10,-10,-10,-20, 0,0,0,0,0,0,0,0 /)
 
-    srch%piesq_mg(wr,0:127) = (/ & 
+    eval%piesq_mg(wr,0:127) = (/ & 
       &  0,  0,  0,  0,  0,  0,  0,  0, 0,0,0,0,0,0,0,0, &
       &  5, 10, 10, 10, 10, 10, 10,  5, 0,0,0,0,0,0,0,0, &
       & -5,  0,  0,  0,  0,  0,  0, -5, 0,0,0,0,0,0,0,0, &
@@ -1405,7 +1316,7 @@ program lostchess
       & -5,  0,  0,  0,  0,  0,  0, -5, 0,0,0,0,0,0,0,0, &
       &  0,  0,  0,  5,  5,  0,  0,  0,  0,0,0,0,0,0,0,0 /)
       
-    srch%piesq_mg(wq,0:127) = (/ & 
+    eval%piesq_mg(wq,0:127) = (/ & 
       &  -20,-10,-10, -5, -5,-10,-10,-20, 0,0,0,0,0,0,0,0, &
       &  -10,  0,  0,  0,  0,  0,  0,-10, 0,0,0,0,0,0,0,0, &
       &  -10,  0,  5,  5,  5,  5,  0,-10, 0,0,0,0,0,0,0,0, &
@@ -1415,7 +1326,7 @@ program lostchess
       &  -10,  0,  5,  0,  0,  0,  0,-10, 0,0,0,0,0,0,0,0, &
       &  -20,-10,-10, -5, -5,-10,-10,-20,  0,0,0,0,0,0,0,0 /)
 
-    srch%piesq_mg(wk,0:127) = (/ & 
+    eval%piesq_mg(wk,0:127) = (/ & 
       &  -30,-40,-40,-50,-50,-40,-40,-30, 0,0,0,0,0,0,0,0, &
       &  -30,-40,-40,-50,-50,-40,-40,-30, 0,0,0,0,0,0,0,0, &
       &  -30,-40,-40,-50,-50,-40,-40,-30, 0,0,0,0,0,0,0,0, &
@@ -1425,12 +1336,12 @@ program lostchess
       &   20, 20,  0,  0,  0,  0, 20, 20, 0,0,0,0,0,0,0,0, &
       &   20, 30, 10,  0,  0, 10, 30, 20,  0,0,0,0,0,0,0,0 /)
       
-    srch%piesq_mg(7:12,0:127) = srch%piesq_mg(1:6,0:127)
+    eval%piesq_mg(7:12,0:127) = eval%piesq_mg(1:6,0:127)
     do p_ind=1,6
-      call mirror(srch%piesq_mg(p_ind,0:127))
+      call mirror(eval%piesq_mg(p_ind,0:127))
     end do
     
-    srch%piesq_eg(wp,0:127) = (/ & 
+    eval%piesq_eg(wp,0:127) = (/ & 
       &   0,   0,   0,   0,   0,   0,   0,   0, 0,0,0,0,0,0,0,0, &
       & 180, 180, 160, 140, 140, 160, 180, 180, 0,0,0,0,0,0,0,0, &
       & 100, 100,  80,  60,  60,  80, 100, 100, 0,0,0,0,0,0,0,0, &
@@ -1440,12 +1351,12 @@ program lostchess
       &  10,  10,  10,  10,  10,  10,  10,  10, 0,0,0,0,0,0,0,0, &
       &   0,   0,   0,   0,   0,   0,   0,   0, 0,0,0,0,0,0,0,0 /)
    
-    srch%piesq_eg(wn,0:127) = srch%piesq_mg(wn,0:127)
-    srch%piesq_eg(wb,0:127) = srch%piesq_mg(wb,0:127)
-    srch%piesq_eg(wr,0:127) = srch%piesq_mg(wr,0:127)
-    srch%piesq_eg(wq,0:127) = srch%piesq_mg(wq,0:127)
+    eval%piesq_eg(wn,0:127) = eval%piesq_mg(wn,0:127)
+    eval%piesq_eg(wb,0:127) = eval%piesq_mg(wb,0:127)
+    eval%piesq_eg(wr,0:127) = eval%piesq_mg(wr,0:127)
+    eval%piesq_eg(wq,0:127) = eval%piesq_mg(wq,0:127)
     
-    srch%piesq_eg(wk,0:127) = (/ & 
+    eval%piesq_eg(wk,0:127) = (/ & 
       & -50,-40,-30,-20,-20,-30,-40,-50, 0,0,0,0,0,0,0,0, &
       & -30,-20,-10,  0,  0,-10,-20,-30, 0,0,0,0,0,0,0,0, &
       & -30,-10, 20, 30, 30, 20,-10,-30, 0,0,0,0,0,0,0,0, &
@@ -1455,19 +1366,19 @@ program lostchess
       & -30,-30,  0,  0,  0,  0,-30,-30, 0,0,0,0,0,0,0,0, &
       & -50,-30,-30,-30,-30,-30,-30,-50, 0,0,0,0,0,0,0,0 /)
    
-  srch%piesq_eg(7:12,0:127) = srch%piesq_eg(1:6,0:127)
+  eval%piesq_eg(7:12,0:127) = eval%piesq_eg(1:6,0:127)
     do p_ind=1,6
-      call mirror(srch%piesq_eg(p_ind,0:127))
+      call mirror(eval%piesq_eg(p_ind,0:127))
     end do
     
   end subroutine
 
-  function static_eval() result(white_score)
+  function static_eval() result(white_score) !refactor pending
     integer::white_score,sq,pie,col,opening,endgame,phase
     integer,dimension(0:12)::pie_phase = (/ 0, 0,1,1,2,4,0, 0,1,1,2,4,0 /)
-    srch%ss_material = 0
-    srch%ss_position_mg = 0
-    srch%ss_position_eg = 0
+    eval%ss_material = 0
+    eval%ss_position_mg = 0
+    eval%ss_position_eg = 0
     
     phase = 32
     
@@ -1476,9 +1387,9 @@ program lostchess
         pie = board(sq)
         if(pie /= empty)then
           col = get_color(pie)
-          srch%ss_material(col) = srch%ss_material(col) + srch%piece_value(pie)
-          srch%ss_position_mg(col) = srch%ss_position_mg(col) + srch%piesq_mg(pie,sq)
-          srch%ss_position_eg(col) = srch%ss_position_eg(col) + srch%piesq_eg(pie,sq)
+          eval%ss_material(col) = eval%ss_material(col) + eval%piece_value(pie)
+          eval%ss_position_mg(col) = eval%ss_position_mg(col) + eval%piesq_mg(pie,sq)
+          eval%ss_position_eg(col) = eval%ss_position_eg(col) + eval%piesq_eg(pie,sq)
           phase = phase - pie*pie_phase(pie)
         end if
       end if
@@ -1486,9 +1397,9 @@ program lostchess
     
     phase =  (phase * 256 + 16) / 32
     
-    opening = srch%ss_position_mg(team_white) - srch%ss_position_mg(team_black)
-    endgame = srch%ss_position_eg(team_white) - srch%ss_position_eg(team_black)
-    white_score = srch%ss_material(team_white) - srch%ss_material(team_black) &
+    opening = eval%ss_position_mg(team_white) - eval%ss_position_mg(team_black)
+    endgame = eval%ss_position_eg(team_white) - eval%ss_position_eg(team_black)
+    white_score = eval%ss_material(team_white) - eval%ss_material(team_black) &
               & + (((opening * (256 - phase)) + (endgame * phase)) / 256 )
               
     if(state%side == team_black) white_score = -white_score         
@@ -1498,26 +1409,19 @@ program lostchess
     type(type_move)::m1,m2
     logical::eq 
     eq = .false.
-    if(m1%ini == m2%ini)then
-      if(m1%fin == m2%fin)then
-        if(m1%is_capture .eqv. m2%is_capture)then
-          if(m1%promotion_pie == m2%promotion_pie)then
-            if(m1%is_pawnstart .eqv. m2%is_pawnstart)then
-              if(m1%is_enpassant .eqv. m2%is_enpassant)then
-                if(m1%is_castling .eqv. m2%is_castling)then
-                  if(m1%captured_pie == m2%captured_pie)then
-                    eq = .true. !i know, eqv operator sux
-                  end if
-                end if 
-              end if
-            end if
-          end if
+    if(m1%ini == m2%ini .and. m1%fin == m2%fin .and. & 
+      & m1%captured_pie == m2%captured_pie .and. m1%promotion_pie == m2%promotion_pie)then
+      if(m1%is_pawnstart .eqv. m2%is_pawnstart)then
+        if(m1%is_enpassant .eqv. m2%is_enpassant)then
+          if(m1%is_castling .eqv. m2%is_castling)then
+            eq = .true.
+          end if 
         end if
       end if
     end if
   end function
 
-  subroutine score_moves()
+  subroutine score_moves() !refactor pending
     integer::m_ind,pie,captured
     type(type_move)::m
     integer,dimension(0:12)::reward,hunter
@@ -1534,9 +1438,9 @@ program lostchess
       if(equal_m(m,srch%killers(0,srch%ply)))then
          moves_score(m_ind) = 200
       end if
-      if(m%is_capture)then
+      captured = m%captured_pie
+      if(captured /= empty)then
         pie = board(m%ini)
-        captured = m%captured_pie
         moves_score(m_ind) = moves_score(m_ind) + reward(captured)
         moves_score(m_ind) = moves_score(m_ind) + hunter(pie)
       end if
@@ -1575,7 +1479,7 @@ program lostchess
       if(srch%t_ini - time_start < time_max)then
         !init
         srch%nodes = 0
-        srch%best_score = -inf
+        srch%score = -inf
         srch%best_move = move_null
         srch%ply = 0
         srch%chekmates = 0
@@ -1584,11 +1488,11 @@ program lostchess
         srch%fh = 0
         srch%fhf = 0
         !alpha beta
-        srch%best_score = alpha_beta(d_ind,-inf,inf)
+        srch%score = alpha_beta(d_ind,-inf,inf)
         call cpu_time(srch%t_cur)
         !write results
         write(*,'(I7,I3,I12,I6,A6)',advance='no') &
-          &  srch%best_score, &
+          &  srch%score, &
           &  d_ind, &
           &  srch%nodes, &
           &  floor(1000*(srch%t_cur-srch%t_ini)), &
@@ -1664,7 +1568,7 @@ program lostchess
 
       call make_move(m)
         srch%ply = srch%ply+1
-        if(is_attacked(state%kings(ieor(1,state%side)),state%side))then
+        if(in_check(ieor(1,state%side)))then
           call undo_last_move()
           srch%ply = srch%ply-1
           cycle
@@ -1704,7 +1608,7 @@ program lostchess
     
     !checkmate/stalemate
     if(legal_moves == 0)then
-      if(is_attacked(state%kings(state%side),ieor(1,state%side)))then
+      if(in_check(state%side))then
         srch%chekmates = srch%chekmates+1
         score = -mate_score+srch%ply
       else
@@ -1751,7 +1655,7 @@ program lostchess
       m = moves_list(get_best_ind())
       call make_move(m)
         srch%ply = srch%ply+1
-        if(is_attacked(state%kings(ieor(1,state%side)),state%side))then
+        if(in_check(ieor(1,state%side)))then
           call undo_last_move()
           srch%ply = srch%ply-1
           cycle
@@ -1776,7 +1680,7 @@ program lostchess
     score = alpha
   end function
 
-! TEST
+!TEST
 
   subroutine test_engine
   type type_test
@@ -1870,7 +1774,7 @@ program lostchess
       write(*,*)'move is not in list ',t_ind
     end if
     call make_move(m)
-    if(is_attacked(state%kings(ieor(1,state%side)),state%side))then
+    if(in_check(ieor(1,state%side)))then
       write(*,*)'move is illegal ',t_ind
     end if
   end do
@@ -1883,7 +1787,7 @@ program lostchess
       write(*,*)'move is not in list ',t_ind
     end if
     call make_move(m)
-    if(is_attacked(state%kings(ieor(1,state%side)),state%side))then
+    if(in_check(ieor(1,state%side)))then
       write(*,*)'move is illegal ',t_ind
     end if
   end do
@@ -1917,3 +1821,4 @@ program lostchess
   end subroutine
 
 end program lostchess
+
