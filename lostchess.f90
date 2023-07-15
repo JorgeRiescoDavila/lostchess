@@ -103,6 +103,8 @@ program lostchess
     integer(8),dimension(0:15)::cp
     integer(8),dimension(-1:127)::ep
   end type
+  
+  !hash table of Zobrist constants
   type(type_hash_table)::hash_table
 
   !board
@@ -191,46 +193,46 @@ program lostchess
   integer(8),dimension(0:TT_size-1,0:3)::TT
   integer::TT_reads,TT_saves
 
-!MAIN LOOP
+!INIT
 
   integer::selected_option
 
-  !init program
   call init()
 
-  do while (.true.)
-    write(*,*) 'select options -----------------------------------------------------------------'
-    write(*,*) '1 PVP | 2 PVE | 3 PerfTest | 4 EngineTest'
-    write(*,*) '--------------------------------------------------------------------------------'
-    read*, selected_option
-    select case (selected_option)
-      case (1)
-        call restart_game()
-        call write_board()
-        do while(get_winner() == team_none)
-          call read_move()
-        end do
-        write(*,*)'Winner 0=w,1=b,3=draw ',get_winner()
-      case (2)
-        call restart_game()  
-        call write_board()        
-        do while(get_winner() == team_none)
-          call search_handler(7,3.)
-          call make_move(srch%best_move)
+  !main loop
+    do while (.true.)
+      write(*,*) 'select options -----------------------------------------------------------------'
+      write(*,*) '1 PVP | 2 PVE | 3 PerfTest | 4 EngineTest'
+      write(*,*) '--------------------------------------------------------------------------------'
+      read*, selected_option
+      select case (selected_option)
+        case (1)
+          call restart_game()
           call write_board()
-          if(get_winner() /= team_none) exit
-          call read_move()
-        end do
-        write(*,*)'Winner 0=w,1=b,3=draw ',get_winner()
-      case (3)
-        call restart_game()
-        call perft_handler()
-      case (4)
-        call test_engine()
-      case default
-        exit
-    end select
-  end do
+          do while(get_winner() == team_none)
+            call read_move()
+          end do
+          write(*,*)'Winner 0=w,1=b,3=draw ',get_winner()
+        case (2)
+          call restart_game()  
+          call write_board()        
+          do while(get_winner() == team_none)
+            call search_handler(7,3.)
+            call make_move(srch%best_move)
+            call write_board()
+            if(get_winner() /= team_none) exit
+            call read_move()
+          end do
+          write(*,*)'Winner 0=w,1=b,3=draw ',get_winner()
+        case (3)
+          call restart_game()
+          call perft_handler()
+        case (4)
+          call test_engine()
+        case default
+          exit
+      end select
+    end do
 
   contains
 
@@ -732,12 +734,12 @@ program lostchess
 
   end subroutine
 
-  function is_attacked(sq,attacking_side) !refactor pending
+  function is_attacked(sq,attacking_side)
     logical::is_attacked
     integer::sq,attacking_side
     integer,dimension(0:7)::directions
     integer::dir,dir_ind,fin,piece
-    logical::is_slide
+    logical::is_slide,first_step
    
     is_attacked = .FALSE.
     
@@ -746,16 +748,20 @@ program lostchess
       dir = directions(dir_ind)
       if(dir == 0) exit
       fin = sq+dir
+      first_step = .true.
       do while (iand(fin,136) == 0)
         piece = board(fin)
-        if(piece /= empty .and. get_color(piece) == attacking_side .and. is_queen_rook(piece))then
-          is_attacked = .TRUE.
-          return
-        end if
         if(piece /= empty)then
+          if(get_color(piece) == attacking_side)then
+            if(is_queen_rook(piece) .or. (is_king(piece) .and. first_step))then
+              is_attacked = .TRUE.
+              return
+            end if
+          end if
           exit
         end if
         fin = fin+dir
+        first_step = .false.
       end do
     end do
     
@@ -764,16 +770,20 @@ program lostchess
       dir = directions(dir_ind)
       if(dir == 0) exit
       fin = sq+dir
+      first_step = .true.
       do while (iand(fin,136) == 0)
         piece = board(fin)
-        if(piece /= empty .and. get_color(piece) == attacking_side .and. is_queen_bishop(piece))then
-          is_attacked = .TRUE.
-          return
-        end if
         if(piece /= empty)then
+          if(get_color(piece) == attacking_side)then
+            if(is_queen_bishop(piece) .or. (is_king(piece) .and. first_step))then
+              is_attacked = .TRUE.
+              return
+            end if
+          end if
           exit
         end if
         fin = fin+dir
+        first_step = .false.
       end do
     end do
     
@@ -784,22 +794,7 @@ program lostchess
       fin = sq+dir
       do while (iand(fin,136) == 0)
         piece = board(fin)
-        if(piece /= empty .and. get_color(piece) == attacking_side .and. is_knight(piece))then
-          is_attacked = .TRUE.
-          return
-        end if
-        exit
-      end do
-    end do
-    
-    directions = directions_rook_bishop
-    do dir_ind = 0,7
-      dir = directions(dir_ind)
-      if(dir == 0) exit
-      fin = sq+dir
-      do while (iand(fin,136) == 0)
-        piece = board(fin)
-        if(piece /= empty .and. get_color(piece) == attacking_side .and. is_king(piece))then
+        if(is_knight(piece) .and. get_color(piece) == attacking_side)then
           is_attacked = .TRUE.
           return
         end if
