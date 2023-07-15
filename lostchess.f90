@@ -1,6 +1,9 @@
 
 program lostchess
-  implicit none
+  ! use iso_fortran_env, only: int64
+
+  implicit none  
+
 
   !game length
   integer,parameter::max_moves_per_game = 1024
@@ -93,10 +96,10 @@ program lostchess
 
   !hash tables structure
   type type_hash_table
-    integer,dimension(0:12,0:127)::board
-    integer::side
-    integer,dimension(0:15)::cp
-    integer,dimension(-1:127)::ep
+    integer(8),dimension(0:12,0:127)::board
+    integer(8)::side
+    integer(8),dimension(0:15)::cp
+    integer(8),dimension(-1:127)::ep
   end type
   type(type_hash_table)::hash_table
 
@@ -109,7 +112,7 @@ program lostchess
     integer::cp
     integer::ep
     integer::rule50
-    integer::hash
+    integer(8)::hash
     integer,dimension(0:1)::kings
   end type
   type(type_state)::state
@@ -122,7 +125,7 @@ program lostchess
     integer::cp
     integer::ep
     integer::rule50
-    integer::hash
+    integer(8)::hash
     type(type_move)::move
   end type
   type(type_history),dimension(0:max_moves_per_game-1)::hist
@@ -134,7 +137,7 @@ program lostchess
 
   !search engine
   integer,parameter::inf = 2**30
-  integer,parameter::mate_score = 1000000
+  integer,parameter::mate_score = 100000
   integer,parameter::ulti_depth = 32
   !search engine
   type type_search
@@ -151,12 +154,11 @@ program lostchess
     type(type_move)::best_move
     type(type_move),dimension(0:1,0:ulti_depth)::killers
     !statistics
-    integer::nodes,nodes_quies,chekmates,stalemates
+    integer::nodes,nodes_quies,chekmates,stalemates,fh,fhf
     real::t_ini
     real::t_cur
   end type
   type(type_search)::srch
-  integer::ply_depth
 
   !principal variation table
   integer,dimension(0:ulti_depth-1)::PV_length
@@ -168,8 +170,8 @@ program lostchess
   integer,parameter::node_is_pv = 0
   integer,parameter::node_is_alpha = 0
   integer,parameter::node_is_beta = 0
-  integer,parameter::TT_size = 2**13
-  integer,dimension(0:TT_size-1,0:3)::TT
+  integer,parameter::TT_size = 2**16
+  integer(8),dimension(0:TT_size-1,0:3)::TT
   integer::TT_reads,TT_saves
 
   !testing variables
@@ -180,7 +182,7 @@ program lostchess
 
   do while (.true.)
     write(*,*) 'select options -----------------------------------------------------------------'
-    write(*,*) '1 PVP | 2 PVE | 3 PerfTest'
+    write(*,*) '1 PVP | 2 PVE | 3 PerfTest | 4 EngineTest'
     write(*,*) '--------------------------------------------------------------------------------'
     read*, selected_option
     select case (selected_option)
@@ -217,6 +219,8 @@ program lostchess
       case (3)
         call restart_game()
         call perft_handler()
+      case (4)
+        call test_engine()
       case default
         exit
     end select
@@ -241,11 +245,113 @@ program lostchess
 
   subroutine init_hash_table()
     integer::sq,pie,cp_ind,ind
-    integer,dimension(0:848)::runif
-    
+    integer(8),dimension(0:848)::runif
+    integer(8),dimension(0:848)::runif2
+
+    !much better with a more quality prng
+    runif = (/ &
+      & 1368675251, 1891880796,  700317253, 1739708780,  651533054, 2034454733, 1403393136, 1459392435, 1690483370, &
+      &  515898766, 1774492347, 2126099084, 1928990136,  941175464,  614589881,   93915237, 1682327365,  603890448, &
+      &   77824578, 1044779211, 1637743915, 1740701981, 1802680770,   24872660, 1889718487, 1093971559, 1827807901, &
+      &  201034989, 1812439150,  237061379, 1374011684,  867095669,  512912468,  173592560,  915311602, 2096335550, &
+      &  174691649, 1811085459,  895976538, 1291364740,  487833643,  522851953, 1665400754,   95569021,  253069350, &
+      & 1678923300,  628922307,  405260802,   70469241,  301302659,  617044762,  800382971, 2092557816,  170720740, &
+      & 1323407939, 1266501449, 2100661479, 1450633190, 1197698875, 2026857355, 1493622740,   22639567, 1324877131, &
+      &  331865319,  139976822, 1146697312, 1774239402,  957225684, 1259585569, 1342485792,  736700813, 1774929579, &
+      & 1616693891, 1009197804, 1468286637, 1873676712,  479334716,  257022746, 1816810744, 1242124778,  714463002, &
+      & 1680295932,  272783368,  589792906, 1464376093,  992586424,  985911754, 1071507986,  161000905, 1362358246, &
+      & 1425969532, 1204406163,  175123052, 1646772745, 2079909172, 1103029295, 1523952001,  358812253,  450897057, &
+      & 1883585801,  428251962,  184303180,  871297259,  168872712,  327707807,  358690951, 1179009248, 1774558825, &
+      & 1161346830, 1832735179, 1878146682,  672659655, 2138741910,  578713973,  664577404,  478109203,  638507223, &
+      &  662174269,  744869771,  339996977,   69956676,  991076414, 1335023536,    7405682, 1947480647, 1981370246, &
+      & 1728879968,  911889213, 2103521604, 1773681156, 1639445608,  506557139, 1123122198, 1734282179, 1514947212, &
+      & 1221037147,  845501179,  970380948, 1641146629, 1918100650, 1729927056,  862554946,  356471597,  684030059, &
+      &  453795799,  632269886,  592072808,   39315008, 1197532780,  700552620,  930911976,  664241197, 1390467640, &
+      &  529547208,   63163986,  590870270, 1133154655,  854062662,  837245827,  264957692, 1012858234,  461768734, &
+      & 1129659399, 1852283934,  443814975, 1232972618,  584691057,  892642857,  880758452,  771557392, 1093271014, &
+      & 1888012976,  488135845, 1352134201,  698965884,  103772161,  794097625, 1446101864,  977956295,  741743903, &
+      & 1163906952, 1727285306, 1088989154,  555277219, 1504042350, 1236589745, 1429494521, 1225402844,  916401482, &
+      & 1273520557, 1148858044,  494634887, 1386880230, 1912646307, 2131272033, 2092846160,  666724257,  361033912, &
+      & 1866868585,  733536686, 1645942185, 1463408470, 2101625716, 1967410506,  377376420, 2082042893, 1798558203, &
+      &  776960029, 1336311393, 1520133638, 1128169705,   91329782,  348637257,  808469209,  419227013,  800941389, &
+      & 1108131488,  421851252, 1878018706, 1684747861, 1365393682,  498977530, 2058491384,  411323555,  786370240, &
+      & 1580276331,  659150119, 1558682832, 1990893926,  754679093, 1356124838, 1175275737, 1135740051, 1715798236, &
+      & 1481434065,  494625495,  811593617, 1180965475,  980388849,  414224384, 1911357489, 1120482046,  164314072, &
+      &   15628196, 1634952816,  501318511, 2043033107, 1494539244, 2119104635, 2083929149,  315128585, 1373793725, &
+      & 1329944386,  619569047, 1807633336, 1574685114, 1510508678,  559686872, 2009766648,    8274532,  756490359, &
+      &  157644343, 1710374322, 1105834764, 1390244568,  571009286, 1720241988,  267775211,  312167459, 1705118907, &
+      &  809534895, 1343260457, 1350920866, 2052782081, 1907201837, 1652960554, 1414764605, 2121997273, 1595600434, &
+      &  474968201, 1708394436,  644710369, 2147064334,  200402271, 1963200010, 2000643767,  362365252,  319177518, &
+      & 1055057941, 1421227095,  243013990, 1302942106,   26440961, 1208906686,   16618804, 1956836130,  509749934, &
+      &  469855099, 1714850879, 2022591826, 1260672159,  759842508, 1720607579,  196585683, 1642393186,  185558894, &
+      & 1563892861, 1572420420, 1138212377, 2118253011, 1246465578, 1574982123,  208932061,  198399331,   36241262, &
+      & 1273186794, 1323908930, 1613552756,  269939859, 2107344246,  688583843,  452882078, 1054653496, 1541198831, &
+      &  493538432,  814621432, 1774154953,  636555274,  367717727, 1418616810, 1453678043,  494940302,  258131094, &
+      &    6463741,  163582784,  694379663, 1381865788,   33275584, 1268689317,  229373924, 1257648985,  613705225, &
+      &  298245027, 1483471461, 1812434500, 1094171683,  908585755,  474072084, 1608830879,  759676666,  908808591, &
+      &  617676584, 1240846196,  288937466, 1597387965, 1680661494,  626440393, 1452998626, 1249211605, 1352514526, &
+      & 1939374980, 1293411132,  635760990, 1351342715, 1669402521,  971107193, 1360598653, 1021600497,  207608344, &
+      &  559056597,  957550632, 1979552134, 1289072581,  999016145,  998770724, 1193318150,  994775377, 1915288613, &
+      & 1413349757, 1144626648, 1084227657, 1426613940,  767397953,  471749215, 1469511508, 1666971202, 2011396370, &
+      &  863242629, 1190115024,  540780229,  794978229,  764512189, 1558362276, 1307435488, 1768835553, 1323629778, &
+      & 2095868496,  836325077, 2107314822,  130660082,  563435039,  664145559, 1499473107,  486615559,  603683118, &
+      & 1463921297,  845100803,  719656946,   92713341, 1126422330,  248132623, 1068429874,  981645630,  554559708, &
+      &  102249205,  973838634, 1986427334, 1258917958, 1109661635,  687694634, 1947883707,   74569437, 1855620724, &
+      & 1157861777, 1835660856, 1117740594,   44064648, 2013409135, 1693900691,  240850317, 1407600302, 1733653774, &
+      &  262249414, 1611556571,   31043170,  488621028, 2050344900, 1210932003, 1839420181,  262081129,  509989091, &
+      & 1162845655,  242908908,  327097477,  548488053,  318107385, 1789079610, 1382865639,   22645943,  318398656, &
+      & 1288903428,  159514082, 1560355979,  349812128,   97332798,  230137582, 1282895986, 1729712102,  707010134, &
+      & 1658455404, 1552327075,  568690469,    9147826,  494619161,  771044742, 1367817359, 1687039500, 2140631419, &
+      &  934436322, 1683917466, 1863194320, 1980876215,  909957415, 2093958990, 2092997899, 2050035683,  398539797, &
+      &  457137331, 1652348103,  233376211, 1214091511, 1188937674, 1444356906, 1041160832, 1545507444, 1904866530, &
+      &  196853792,  357017975, 1988537821, 1069745844,   78385600,  124018427, 1264799883,  438822637,  681928695, &
+      & 1287838197, 1131806394,  958040300, 1609527574, 1848289373,  711207397, 1627088412, 1820073558, 1006897883, &
+      & 1011692324,  843714584,  529601150,  193653362,  110011313,  783708896, 1127518515,  261602748, 1748856404, &
+      &  413212630,  577719883, 1276398554,  131637272, 1233179052, 1203821236,  643730744, 1747290293, 1886550994, &
+      &  932105648,  553376438, 1921844492,  877522823,  494812329, 1566939119, 2109464455,  409098265, 1408915939, &
+      &  516588622,  698453109, 1058368654, 2027455537,  400059243,  521293517, 1744898491,  948642597, 1164479459, &
+      & 1196005634,  803476364, 1894425159, 1552654458, 2033101128, 1746843125, 1507101051,   21608228, 1970828525, &
+      &  748085850, 1626477655, 1980096341, 1911214003, 1324839334, 1218018017, 1138425583,  598044894, 1000239965, &
+      &   35562766, 1203044340,  338714144,  213962590, 1519515783, 1079071268, 1642502730,  943819983,  214154383, &
+      &  485483187,  576666746,  663224537,  233823726,  490533397,   12166487, 1375145916,  574688759, 1229211900, &
+      & 1039336071, 1926927539, 1747829208,   65541031, 1858981297, 1685390766, 1375902672, 1929833046, 2041586159, &
+      & 1367798769, 2099036341,  548958229, 1337572621,  140779742, 1033037811, 1065536056, 1032117466, 1903149673, &
+      & 1476304735,  263830187, 1011956358, 1917890683, 1190682788, 1045115830, 2121871206,  504182111, 2141351251, &
+      & 2062197543, 1785549991, 1480505012, 1118307649,  912648733, 1345934177, 1963546073,  541141507, 1465181085, &
+      &   44479336, 1324056472, 1763555186, 1337471229, 1400425308,  227556657, 2042909443, 1343440793,   12226849, &
+      & 1158602358,  243041595,  264899034,  579650505, 1459541980, 1138244802, 1303656556, 1792246402, 1975196494, &
+      & 1535595092,  999704175, 1784153779, 2092395985, 1513740011,  584550357, 1884337711, 1781723607, 1169976493, &
+      &  506730255, 1660636896, 1687441285, 1715992348, 1410397575,  293967954,  834012093, 1750963808,  332308931, &
+      & 1948209510,  416218232,  729745794,  832871411, 1820749023,  613147604,  391109575, 1462797014, 1771121107, &
+      & 1639266679,  929545208, 1914677570,  424426096,  929269498, 1230194046, 1486198088,  535621122, 1787931421, &
+      & 2136218848, 1489680225,  127687121, 1685257292,  484944940,  328755494,  573571695,  933862407,  396345121, &
+      &  968783605, 2032225935,   46200306,  509726532, 1158128330, 1471528142,  298788765, 2133833282,  498210918, &
+      & 1476541427, 1125497722,  146887462,  495466826, 1006003123,  117304508, 1271701341,  957589528, 1320873791, &
+      &  909303905, 1778657935, 1432629120, 1817834267,  263161021, 1355368842, 1260863729,  314187877,   96944754, &
+      &  312702613,  882255054,  316474831, 2045166031,   44694171,  384281515, 1472612853,  107622411,  111214481, &
+      &  999553757, 1234639115, 1247490051, 1323176366,  309304612, 1084598753,   56364327,  970456102,  614128207, &
+      &  345936167, 1552613337,  267735120,  243681299, 1824460563,  346532727,  930725588, 2082572948, 1979371680, &
+      &  401417198, 1576533174, 1573889183,  167787651,  449518646, 1993073401,  988002041,  395795242,  752649766, &
+      &  997239895, 1564917503,  130994717, 1088351501, 1191957495, 1734273297,  816007680, 1583159763, 1163896779, &
+      &  959572419,  577356935,  195479170, 1610920079,  888958697,  892730463, 1985132519, 2028795034, 2073052801, &
+      & 1978468401,  817876364, 1985507973, 1959481115, 1011761907,  937034151, 1880052996, 1616828929,  927985794, &
+      & 1766175566,   91773396,  101287804,  667090049,  399948240,  645704978,  649625114,  913803261,  735051348, &
+      & 1332693363,  499986423, 1853244871, 1418909652,  525087801,  189968772, 1028159526, 1433663950,  825350199, &
+      &  825958631, 1374132224, 1776512269, 1663420990, 2134944232, 2125456794, 1503898652,  547912871,  256171456, &
+      & 1693347303, 1081909382, 1870294216, 1826702407,  130834722, 2069032623, 1206596992,  472947606,  597400509, &
+      &  782430017,  955324537,  878830927,  357316804, 1993658758,  692241135,  436414020, 1428159859, 1836980756, &
+      & 1832389024, 1882949310,  109929389, 1608418058, 1665101702, 1583216675,  595712313, 1173808362, 2102661419, &
+      & 1289660028, 1709248639, 1636548224, 1315734498, 1989243061,  100538733, 1811861607, 1482104704,  754766874, &
+      &  611171000,    8556815,  529733985, 2085475007, 1965607736,  242536590,  901851600, 1051305198,  262860582, &
+      &  708548420,  513206713,  475288924, 2030204209,  967133772,  724102234, 1696197022,  771388905,  549843727, &
+      & 1622983668,  208958848,  261411685 /)
+
     do ind = 0,848
-      runif(ind) = floor(abs(sin(ind+1.)*2**31))
+      runif2(ind) = floor(abs(sin(ind+1.)*2**31))
+      runif2(ind) = ishft(runif2(ind),32)
+      runif(ind) = runif(ind)+runif2(ind)
     end do
+    
     ind = 0
     
     hash_table%board = 0
@@ -289,7 +395,8 @@ program lostchess
   end subroutine
 
   function hash_position() result(hash)
-    integer::hash,sq,pie
+    integer(8)::hash
+    integer::sq,pie
     hash = 0
     do sq = 0,127
       if(iand(sq,136) == 0)then
@@ -303,7 +410,7 @@ program lostchess
   end function
 
   subroutine inc_hash(inc)
-    integer::inc
+    integer(8)::inc
     state%hash = ieor(state%hash,inc)
   end subroutine
 
@@ -1098,6 +1205,7 @@ program lostchess
 
   recursive function perft(depth) result(nodes)
     integer::nodes,depth,m_ind,king_sq
+    integer::row
     nodes = 0
     if(depth == 0) then
       nodes = 1
@@ -1105,8 +1213,9 @@ program lostchess
     end if
     
     !read TT
-    if(TT(mod(state%hash,TT_size),0) ==  state%hash .and. TT(mod(state%hash,TT_size),1) == depth)then
-      nodes = TT(mod(state%hash,TT_size),2)
+    row = mod(state%hash,TT_size)
+    if(TT(row,0) ==  state%hash .and. TT(row,1) == depth)then
+      nodes = TT(row,2)
       TT_reads = TT_reads+nodes
       return
     end if
@@ -1143,7 +1252,8 @@ program lostchess
       integer,dimension(1:6)::nodes
     end type
     type(type_position),dimension(1:5)::positions
-    integer::p_ind,depth,nodes,hash_ini
+    integer::p_ind,depth,nodes
+    integer(8)::hash_ini
     real::time_ini,time_fin
     
     positions(1)%desc = 'starting position'
@@ -1450,10 +1560,15 @@ program lostchess
   subroutine search_handler(depth,time_max)
     integer::depth,d_ind,pv_ind
     real::time_max,time_start
-    write(*,*)'depth | best move | best score |    time |     nodes |  +q nodes | checkmates | stalemates'
+    write(*,'(A:)',advance='no') '  score dp       nodes  time  move'
+    write(*,'(A:)',advance='no') '         fhf/fh ratio      TT w/r/entry  '
+    write(*,'(A:)',advance='no') ' pv '
+    write(*,*)
     pv_table = move_null
     call cpu_time(time_start)
     TT = 0
+    TT_reads = 0
+    TT_saves = 0
     !iterate depths
     do d_ind = 1,depth
       call cpu_time(srch%t_ini)
@@ -1466,15 +1581,28 @@ program lostchess
         srch%chekmates = 0
         srch%stalemates = 0
         srch%nodes_quies = 0
+        srch%fh = 0
+        srch%fhf = 0
         !alpha beta
         srch%best_score = alpha_beta(d_ind,-inf,inf)
         call cpu_time(srch%t_cur)
         !write results
-        write(*,'(I4,A14,I13,f10.3,I12,I12,I12,I12,I12,I12)')d_ind,move2alg(srch%best_move),srch%best_score,srch%t_cur-srch%t_ini &
-        & ,srch%nodes,srch%nodes_quies-srch%nodes,srch%chekmates,srch%stalemates,TT_saves,TT_reads,TT_entries()
+        write(*,'(I7,I3,I12,I6,A6)',advance='no') &
+          &  srch%best_score, &
+          &  d_ind, &
+          &  srch%nodes, &
+          &  floor(1000*(srch%t_cur-srch%t_ini)), &
+          &  move2alg(srch%best_move)
+        !tt and node sorting
+        write(*,'(I8,I8,f5.2,I8,I7,I5)',advance='no') &
+          &  srch%fhf, srch%fh, 1. * srch%fhf/(srch%fh+1), &
+          &  TT_saves, TT_reads, TT_entries()
+        !pv line
+        write(*,'(A:)',advance='no') ' pv '
         do pv_ind = 0,PV_length(0)-1
           write(*,'(A5)',advance='no') move2alg(PV_table(0,pv_ind))
         end do
+        !line break
         write(*,*)
       end if
     end do
@@ -1548,6 +1676,8 @@ program lostchess
       
       !this position is too good, openent wont choose this path
       if(score >= beta)then
+        srch%fh = srch%fh+1
+        if(legal_moves == 1) srch%fhf = srch%fhf+1
         call TT_save(depth,beta,node_is_beta)
         srch%killers(1,srch%ply) = srch%killers(0,srch%ply)
         srch%killers(0,srch%ply) = m
@@ -1645,5 +1775,145 @@ program lostchess
     
     score = alpha
   end function
+
+! TEST
+
+  subroutine test_engine
+  type type_test
+    character(len=30)::desc
+    character(len=100)::fen
+    character(len=5)::bm
+    character(len=5)::pm
+  end type
+  type(type_test),dimension(1:24)::bratko_kopek
+  type(type_test),dimension(1:5)::finals
+  integer::t_ind,score
+  type(type_move)::m
+  real::t_ini,t_cur
+  
+  
+  finals(1)%desc = 'get oposition'
+  finals(1)%fen  = '8/8/3k4/8/1PK5/8/8/8 w - - 0 1'
+  finals(1)%bm   = 'c4b5'
+  
+  finals(2)%desc = 'avoid oposition'
+  finals(2)%fen  = '8/4k3/4P3/4K3/8/8/8/8 b - - 0 1'
+  finals(2)%bm   = 'e7e8'
+  
+  finals(3)%desc = 'under promo knight'
+  finals(3)%fen  = '4q3/k2P4/8/K2B4/8/8/8/8 w - - 0 1'
+  finals(3)%bm   = 'd7e8N'
+  
+  finals(4)%desc = 'pass pawn'
+  finals(4)%fen  = '8/5ppp/8/5PPP/8/8/8/K1k5 w - - 0 1'
+  finals(4)%bm   = 'g5g6'
+  
+  finals(5)%desc = 'transposition table'
+  finals(5)%fen  = '6K1/4k1P1/8/8/8/7r/8/5R2 w - - 0 1'
+  finals(5)%bm   = 'f1e1'
+  
+  bratko_kopek(1)%fen  = '1k1r4/pp1b1R2/3q2pp/4p3/2B5/4Q3/PPP2B2/2K5 b - - 0 1'  
+  bratko_kopek(1)%bm = 'd6d1'
+  bratko_kopek(2)%fen  = '3r1k2/4npp1/1ppr3p/p6P/P2PPPP1/1NR5/5K2/2R5 w - - 0 1'  
+  bratko_kopek(2)%bm = 'd4d5'
+  bratko_kopek(3)%fen  = '2q1rr1k/3bbnnp/p2p1pp1/2pPp3/PpP1P1P1/1P2BNNP/2BQ1PRK/7R b - - 0 1'  
+  bratko_kopek(3)%bm = 'f6f5'
+  bratko_kopek(4)%fen  = 'rnbqkb1r/p3pppp/1p6/2ppP3/3N4/2P5/PPP1QPPP/R1B1KB1R w KQkq - 0 1'  
+  bratko_kopek(4)%bm = 'e5e6'
+  bratko_kopek(5)%fen  = 'r1b2rk1/2q1b1pp/p2ppn2/1p6/3QP3/1BN1B3/PPP3PP/R4RK1 w - - 0 1'  
+  bratko_kopek(5)%bm = 'c3d5' !'a2a4'
+  bratko_kopek(6)%fen  = '2r3k1/pppR1pp1/4p3/4P1P1/5P2/1P4K1/P1P5/8 w - - 0 1'  
+  bratko_kopek(6)%bm = 'g5g6'
+  bratko_kopek(7)%fen  = '1nk1r1r1/pp2n1pp/4p3/q2pPp1N/b1pP1P2/B1P2R2/2P1B1PP/R2Q2K1 w - - 0 1'  
+  bratko_kopek(7)%bm = 'h5f6'
+  bratko_kopek(8)%fen  = '4b3/p3kp2/6p1/3pP2p/2pP1P2/4K1P1/P3N2P/8 w - - 0 1'  
+  bratko_kopek(8)%bm = 'f4f5'
+  bratko_kopek(9)%fen  = '2kr1bnr/pbpq4/2n1pp2/3p3p/3P1P1B/2N2N1Q/PPP3PP/2KR1B1R w - - 0 1'  
+  bratko_kopek(9)%bm = 'f4f5'
+  bratko_kopek(10)%fen = '3rr1k1/pp3pp1/1qn2np1/8/3p4/PP1R1P2/2P1NQPP/R1B3K1 b - - 0 1'  
+  bratko_kopek(10)%bm = 'c6e5'
+  bratko_kopek(11)%fen = '2r1nrk1/p2q1ppp/bp1p4/n1pPp3/P1P1P3/2PBB1N1/4QPPP/R4RK1 w - - 0 1'  
+  bratko_kopek(11)%bm = 'f2f4'
+  bratko_kopek(12)%fen = 'r3r1k1/ppqb1ppp/8/4p1NQ/8/2P5/PP3PPP/R3R1K1 b - - 0 1'  
+  bratko_kopek(12)%bm = 'd7f5'
+  bratko_kopek(13)%fen = 'r2q1rk1/4bppp/p2p4/2pP4/3pP3/3Q4/PP1B1PPP/R3R1K1 w - - 0 1'  
+  bratko_kopek(13)%bm = 'b2b4'
+  bratko_kopek(14)%fen = 'rnb2r1k/pp2p2p/2pp2p1/q2P1p2/8/1Pb2NP1/PB2PPBP/R2Q1RK1 w - - 0 1'  
+  bratko_kopek(14)%bm = 'd1d2' !'d1e1'
+  bratko_kopek(15)%fen = '2r3k1/1p2q1pp/2b1pr2/p1pp4/6Q1/1P1PP1R1/P1PN2PP/5RK1 w - - 0 1'  
+  bratko_kopek(15)%bm = 'g4g7'
+  bratko_kopek(16)%fen = 'r1bqkb1r/4npp1/p1p4p/1p1pP1B1/8/1B6/PPPN1PPP/R2Q1RK1 w kq - 0 1'  
+  bratko_kopek(16)%bm = 'd2e4'
+  bratko_kopek(17)%fen = 'r2q1rk1/1ppnbppp/p2p1nb1/3Pp3/2P1P1P1/2N2N1P/PPB1QP2/R1B2RK1 b - - 0 1'  
+  bratko_kopek(17)%bm = 'h7h5'
+  bratko_kopek(18)%fen = 'r1bq1rk1/pp2ppbp/2np2p1/2n5/P3PP2/N1P2N2/1PB3PP/R1B1QRK1 b - - 0 1'  
+  bratko_kopek(18)%bm = 'c5b3'
+  bratko_kopek(19)%fen = '3rr3/2pq2pk/p2p1pnp/8/2QBPP2/1P6/P5PP/4RRK1 b - - 0 1'  
+  bratko_kopek(19)%bm = 'e8e4'
+  bratko_kopek(20)%fen = 'r4k2/pb2bp1r/1p1qp2p/3pNp2/3P1P2/2N3P1/PPP1Q2P/2KRR3 w - - 0 1'  
+  bratko_kopek(20)%bm = 'g3g4'
+  bratko_kopek(21)%fen = '3rn2k/ppb2rpp/2ppqp2/5N2/2P1P3/1P5Q/PB3PPP/3RR1K1 w - - 0 1'  
+  bratko_kopek(21)%bm = 'f5h6'
+  bratko_kopek(22)%fen = '2r2rk1/1bqnbpp1/1p1ppn1p/pP6/N1P1P3/P2B1N1P/1B2QPP1/R2R2K1 b - - 0 1'  
+  bratko_kopek(22)%bm = 'b7e4'
+  bratko_kopek(23)%fen = 'r1bqk2r/pp2bppp/2p5/3pP3/P2Q1P2/2N1B3/1PP3PP/R4RK1 b kq - 0 1'  
+  bratko_kopek(23)%bm = 'f7f6'
+  bratko_kopek(24)%fen = 'r2qnrnk/p2b2b1/1p1p2pp/2pPpp2/1PP1P3/PRNBB3/3QNPPP/5RK1 w - - 0 1'  
+  bratko_kopek(24)%bm = 'f2f4'
+  
+  !test the test
+  do t_ind = 1,5
+    call set_fen(finals(t_ind)%fen)
+    call gen_moves(.true.)
+    m = alg2move(finals(t_ind)%bm)
+    if(equal_m(m,move_null))then
+      write(*,*)'move is not in list ',t_ind
+    end if
+    call make_move(m)
+    if(is_attacked(state%kings(ieor(1,state%side)),state%side))then
+      write(*,*)'move is illegal ',t_ind
+    end if
+  end do
+  
+  do t_ind = 1,24
+    call set_fen(bratko_kopek(t_ind)%fen)
+    call gen_moves(.true.)
+    m = alg2move(bratko_kopek(t_ind)%bm)
+    if(equal_m(m,move_null))then
+      write(*,*)'move is not in list ',t_ind
+    end if
+    call make_move(m)
+    if(is_attacked(state%kings(ieor(1,state%side)),state%side))then
+      write(*,*)'move is illegal ',t_ind
+    end if
+  end do
+  
+  write(*,*)'bratko-kopek'
+  call cpu_time(t_ini)
+  do t_ind = 1,24
+    call set_fen(bratko_kopek(t_ind)%fen)
+    call search_handler(8,1.)
+    write(*,*)move2alg(srch%best_move),bratko_kopek(t_ind)%bm
+    if(move2alg(srch%best_move) == bratko_kopek(t_ind)%bm)then
+      score = score+1
+    end if
+  end do
+  call cpu_time(t_cur)
+  write(*,*)score,t_cur-t_ini
+  
+  ! write(*,*)'finals'
+  ! call cpu_time(t_ini)
+  ! do t_ind = 1,5
+    ! call set_fen(finals(t_ind)%fen)
+    ! call search_handler(10,1.)
+    ! write(*,*)move2alg(srch%best_move),finals(t_ind)%bm
+    ! if(move2alg(srch%best_move) == finals(t_ind)%bm)then
+      ! score = score+1
+    ! end if
+  ! end do
+  call cpu_time(t_cur)
+  write(*,*)score,t_cur-t_ini
+  
+  end subroutine
 
 end program lostchess

@@ -10,7 +10,7 @@ start lostchess.exe
 Or download the lostchess.exe for 64bits Windows
 
 ## Technical details
-It uses 0x88 board representation, pseudo-legal move generator, 32-bit Zobrist hash, perft with transposition table and supports FEN.
+It uses 0x88 board representation, pseudo-legal move generator, 64-bit Zobrist hash, perft with transposition table and supports FEN.
 
 Static evaluation uses piece material and piece-square tables for start and end positions.
 
@@ -19,7 +19,7 @@ Search is done with an alpha-beta prune in negamax form, sorting captures by MVV
 ## PerfT results
 Results for some positions, also checking that hash and fen are unafected after going through the full tree.
 ```
- starting position
+  starting position
           20          20 T
          400         400 T
         8902        8902 T
@@ -57,7 +57,7 @@ unchanged fen            T
      2103487     2103487 T
 unchanged hash           T
 unchanged fen            T
- time:    6.67187500
- TT entrys/size         2783        8192
- TT skiped nodes       696299
+ time:    3.64062500
+ TT entrys/size        65308       65536
+ TT skiped nodes     11446511
 ```
