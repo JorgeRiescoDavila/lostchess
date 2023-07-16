@@ -168,6 +168,7 @@ program lostchess
     integer::score
     type(type_move)::best_move
     type(type_move),dimension(0:1,0:ulti_depth-1)::killers
+    integer,dimension(0:12,0:127)::heuristics
     real::t_ini
     real::t_cur
     integer::nodes,nodes_quies,chekmates,stalemates,fh,fhf
@@ -217,7 +218,7 @@ program lostchess
           call restart_game()  
           call write_board()        
           do while(get_winner() == team_none)
-            call search_handler(7,3.)
+            call search_handler(8,3.)
             call make_move(srch%best_move)
             call write_board()
             if(get_winner() /= team_none) exit
@@ -387,7 +388,8 @@ program lostchess
 !MOVE GENERATOR
 
   function get_row(sq) result(row)
-    integer::sq,row
+    integer,intent(in):: sq
+    integer:: row
     row = ishft(sq,-4)
   end function
 
@@ -734,8 +736,8 @@ program lostchess
 
   end subroutine
 
-  function is_attacked(sq,attacking_side)
-    logical::is_attacked
+  logical function is_attacked(sq,attacking_side)
+    ! logical::is_attacked
     integer::sq,attacking_side
     integer,dimension(0:7)::directions
     integer::dir,dir_ind,fin,piece
@@ -818,9 +820,9 @@ program lostchess
     
   end function
 
-  function in_check(side)
+  logical function in_check(side)
     integer::side
-    logical::in_check
+    ! logical::in_check
     in_check = is_attacked(state%kings(side),ieor(1,side))
   end function
 
@@ -1267,7 +1269,7 @@ program lostchess
 
 !SEARCH ENGINE
 
-  subroutine init_piesq_table() !refactor pending
+  subroutine init_piesq_table()
     integer::p_ind
     eval%piece_value = (/ 0,100,310,320,500,950,100000,100,310,320,500,950,100000 /)
   
@@ -1309,7 +1311,7 @@ program lostchess
       & -5,  0,  0,  0,  0,  0,  0, -5, 0,0,0,0,0,0,0,0, &
       & -5,  0,  0,  0,  0,  0,  0, -5, 0,0,0,0,0,0,0,0, &
       & -5,  0,  0,  0,  0,  0,  0, -5, 0,0,0,0,0,0,0,0, &
-      &  0,  0,  0,  5,  5,  0,  0,  0,  0,0,0,0,0,0,0,0 /)
+      &  0,  0,  0,  5,  5,  0,  0,  0, 0,0,0,0,0,0,0,0 /)
       
     eval%piesq_mg(wq,0:127) = (/ & 
       &  -20,-10,-10, -5, -5,-10,-10,-20, 0,0,0,0,0,0,0,0, &
@@ -1319,7 +1321,7 @@ program lostchess
       &    0,  0,  5,  5,  5,  5,  0, -5, 0,0,0,0,0,0,0,0, &
       &  -10,  5,  5,  5,  5,  5,  0,-10, 0,0,0,0,0,0,0,0, &
       &  -10,  0,  5,  0,  0,  0,  0,-10, 0,0,0,0,0,0,0,0, &
-      &  -20,-10,-10, -5, -5,-10,-10,-20,  0,0,0,0,0,0,0,0 /)
+      &  -20,-10,-10, -5, -5,-10,-10,-20, 0,0,0,0,0,0,0,0 /)
 
     eval%piesq_mg(wk,0:127) = (/ & 
       &  -30,-40,-40,-50,-50,-40,-40,-30, 0,0,0,0,0,0,0,0, &
@@ -1329,23 +1331,9 @@ program lostchess
       &  -20,-30,-30,-40,-40,-30,-30,-20, 0,0,0,0,0,0,0,0, &
       &  -10,-20,-20,-20,-20,-20,-20,-10, 0,0,0,0,0,0,0,0, &
       &   20, 20,  0,  0,  0,  0, 20, 20, 0,0,0,0,0,0,0,0, &
-      &   20, 30, 10,  0,  0, 10, 30, 20,  0,0,0,0,0,0,0,0 /)
-      
-    eval%piesq_mg(7:12,0:127) = eval%piesq_mg(1:6,0:127)
-    do p_ind=1,6
-      call mirror(eval%piesq_mg(p_ind,0:127))
-    end do
-    
-    eval%piesq_eg(wp,0:127) = (/ & 
-      &   0,   0,   0,   0,   0,   0,   0,   0, 0,0,0,0,0,0,0,0, &
-      & 180, 180, 160, 140, 140, 160, 180, 180, 0,0,0,0,0,0,0,0, &
-      & 100, 100,  80,  60,  60,  80, 100, 100, 0,0,0,0,0,0,0,0, &
-      &  30,  30,  20,   0,   0,  20,  30,  30, 0,0,0,0,0,0,0,0, &
-      &   0,   0,   0,   0,   0,   0,   0,   0, 0,0,0,0,0,0,0,0, &
-      &   5,   5,   5,   0,   0,   5,   5,   5, 0,0,0,0,0,0,0,0, &
-      &  10,  10,  10,  10,  10,  10,  10,  10, 0,0,0,0,0,0,0,0, &
-      &   0,   0,   0,   0,   0,   0,   0,   0, 0,0,0,0,0,0,0,0 /)
-   
+      &   20, 30, 10,  0,  0, 10, 30, 20, 0,0,0,0,0,0,0,0 /)
+       
+    eval%piesq_eg(wp,0:127) = eval%piesq_mg(wp,0:127)
     eval%piesq_eg(wn,0:127) = eval%piesq_mg(wn,0:127)
     eval%piesq_eg(wb,0:127) = eval%piesq_mg(wb,0:127)
     eval%piesq_eg(wr,0:127) = eval%piesq_mg(wr,0:127)
@@ -1360,9 +1348,11 @@ program lostchess
       & -30,-10, 20, 30, 30, 20,-10,-30, 0,0,0,0,0,0,0,0, &
       & -30,-30,  0,  0,  0,  0,-30,-30, 0,0,0,0,0,0,0,0, &
       & -50,-30,-30,-30,-30,-30,-30,-50, 0,0,0,0,0,0,0,0 /)
-   
-  eval%piesq_eg(7:12,0:127) = eval%piesq_eg(1:6,0:127)
-    do p_ind=1,6
+    
+    eval%piesq_mg(bp:bk,0:127) = eval%piesq_mg(wp:wk,0:127)
+    eval%piesq_eg(bp:bk,0:127) = eval%piesq_eg(wp:wk,0:127)
+    do p_ind = wp,wk
+      call mirror(eval%piesq_mg(p_ind,0:127))
       call mirror(eval%piesq_eg(p_ind,0:127))
     end do
     
@@ -1416,31 +1406,38 @@ program lostchess
     end if
   end function
 
-  subroutine score_moves() !refactor pending
-    integer::m_ind,pie,captured
+  subroutine score_moves()
+    integer::m_ind,pie
     type(type_move)::m
-    integer,dimension(0:12)::reward,hunter
+    integer,dimension(0:12)::mvv,lva
     
-    reward = (/ 0,1000,3100,3200,5000,9500,100000,1000,3100,3200,5000,9500,1000000 /)
-    hunter = (/ 0,-10,-31,-32,-50,-95,-100,-10,-31,-32,-50,-95,-100/)
+    mvv = (/ 0,1000,2000,3000,4000,5000,6000,1000,2000,3000,4000,5000,6000 /)
+    lva = (/ 0,5,4,3,2,1,0,5,4,3,2,1,0/)
     
     do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
-      moves_score(m_ind) = 0
       m = moves_list(m_ind)
+      pie = board(m%ini)
+      
+      !heuristic score
+      moves_score(m_ind) = srch%heuristics(pie,m%fin)
+      
+      !killers
       if(equal_m(m,srch%killers(1,srch%ply)))then
-         moves_score(m_ind) = 100
+         moves_score(m_ind) = 25000
       end if
       if(equal_m(m,srch%killers(0,srch%ply)))then
-         moves_score(m_ind) = 200
+         moves_score(m_ind) = 30000
       end if
-      captured = m%captured_pie
-      if(captured /= empty)then
-        pie = board(m%ini)
-        moves_score(m_ind) = moves_score(m_ind) + reward(captured)
-        moves_score(m_ind) = moves_score(m_ind) + hunter(pie)
+      
+      !captures 
+      if(m%captured_pie /= empty)then
+        moves_score(m_ind) = moves_score(m_ind) + mvv(m%captured_pie) + lva(pie)
       end if
       if(m%promotion_pie /= empty)then
-        moves_score(m_ind) = moves_score(m_ind) + reward(m%promotion_pie)
+        moves_score(m_ind) = moves_score(m_ind) + mvv(m%promotion_pie)
+      end if
+      if(m%is_enpassant)then
+        moves_score(m_ind) = moves_score(m_ind) + mvv(wp) + lva(wp)
       end if
     end do
   end subroutine
@@ -1456,11 +1453,11 @@ program lostchess
     end do
   end function
 
-  subroutine search_handler(depth,time_max)
+  subroutine search_handler(depth,time_max)!refactor pending
     integer::depth,d_ind,pv_ind
     real::time_max,time_start
     write(*,'(A:)',advance='no') '  score dp       nodes  time  move'
-    write(*,'(A:)',advance='no') '         fhf/fh ratio      TT w/r/entry  '
+    write(*,'(A:)',advance='no') '       fhf/fh   ratio     TTw    TTr entry'
     write(*,'(A:)',advance='no') ' pv '
     write(*,*)
     pv_table = move_null
@@ -1482,6 +1479,7 @@ program lostchess
         srch%nodes_quies = 0
         srch%fh = 0
         srch%fhf = 0
+        srch%heuristics = 0
         !alpha beta
         srch%score = alpha_beta(d_ind,-inf,inf)
         call cpu_time(srch%t_cur)
@@ -1493,7 +1491,7 @@ program lostchess
           &  floor(1000*(srch%t_cur-srch%t_ini)), &
           &  move2alg(srch%best_move)
         !tt and node sorting
-        write(*,'(I8,I8,f5.2,I8,I7,I5)',advance='no') &
+        write(*,'(I8,I8,f5.2,I8,I7,I6)',advance='no') &
           &  srch%fhf, srch%fh, 1. * srch%fhf/(srch%fh+1), &
           &  TT_saves, TT_reads, TT_entries()
         !pv line
@@ -1513,20 +1511,17 @@ program lostchess
     type(type_move)::m
     alpha = alpha_in
 
+    !read TT
     score = TT_read(depth,alpha,beta)
     if(score <= inf)then
       return
     end if
-
-    PV_length(srch%ply) = srch%ply
-
+    
+    !set TT flag
     TT_flag = node_is_alpha
 
-    !too much depth
-    if(srch%ply >= ulti_depth-2)then
-      score = static_eval()
-      return
-    end if
+    !PV table
+    PV_length(srch%ply) = srch%ply
 
     !draw rule50
     if(state%rule50 == 100)then
@@ -1542,6 +1537,12 @@ program lostchess
       end if
     end do
 
+    !too much depth
+    if(srch%ply >= ulti_depth-2)then
+      score = static_eval()
+      return
+    end if
+
     !leaf node
     if(depth == 0)then
       srch%nodes = srch%nodes+1
@@ -1555,12 +1556,12 @@ program lostchess
     !set moves scores
     call score_moves()
     
-    !count legal moves
+    !reset legal move counter
     legal_moves = 0
     
+    !go next depth
     do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
       m = moves_list(get_best_ind())
-
       call make_move(m)
         srch%ply = srch%ply+1
         if(in_check(ieor(1,state%side)))then
@@ -1575,29 +1576,37 @@ program lostchess
       
       !this position is too good, openent wont choose this path
       if(score >= beta)then
+        !collect KPI
         srch%fh = srch%fh+1
         if(legal_moves == 1) srch%fhf = srch%fhf+1
+        !write TT
         call TT_save(depth,beta,node_is_beta)
+        !update killers
         srch%killers(1,srch%ply) = srch%killers(0,srch%ply)
         srch%killers(0,srch%ply) = m
+        !update score
         score = beta
         return
       end if
       
       !better move found
       if(score > alpha)then
+        !change TT flag 
         TT_flag = node_is_pv
-        alpha = score
-
+        !update PV table
         PV_table(srch%ply,srch%ply) = m
         do next_ply = srch%ply+1,PV_length(srch%ply+1)-1
           pv_table(srch%ply,next_ply) = PV_table(srch%ply+1,next_ply)
         end do
         PV_length(srch%ply) = PV_length(srch%ply+1)
-        
+        !update heuristics
+        srch%heuristics(board(m%fin),m%fin) = srch%heuristics(board(m%fin),m%fin)+ depth
+        !collect best move, oversafety jic PV table malfunction
         if(srch%ply == 0)then
           srch%best_move = m
         end if
+        !update alpha
+        alpha = score
       end if
     end do
     
@@ -1613,8 +1622,11 @@ program lostchess
       return
     end if
     
+    !write TT
     call TT_save(depth,alpha,TT_flag)
-    score = alpha
+    
+    !this line looks unnecesary
+    ! score = alpha
   end function
 
   recursive function quies(alpha_in,beta) result(score)
@@ -1623,13 +1635,7 @@ program lostchess
     type(type_move)::m
     alpha = alpha_in
     srch%nodes_quies = srch%nodes_quies+1
-    
-    !too much depth
-    if(srch%ply >= ulti_depth-2)then
-      score = static_eval()
-      return
-    end if
-    
+        
     !static eval
     score = static_eval()
     if(score >= beta)then
@@ -1640,12 +1646,19 @@ program lostchess
       alpha = score
     end if
     
+    !too much depth
+    if(srch%ply >= ulti_depth-2)then
+      score = static_eval()
+      return
+    end if
+    
     !generate moves
     call gen_moves(.false.)
         
     !set moves scores
     call score_moves()
     
+    !go next depth
     do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
       m = moves_list(get_best_ind())
       call make_move(m)
@@ -1655,7 +1668,6 @@ program lostchess
           srch%ply = srch%ply-1
           cycle
         end if
-        ! write(*,*) move2alg(m),srch%ply
         score = -quies(-beta,-alpha)
       call undo_last_move()
       srch%ply = srch%ply-1
@@ -1672,7 +1684,8 @@ program lostchess
       end if
     end do
     
-    score = alpha
+    !this line looks unnecesary
+    ! score = alpha
   end function
 
 !TEST

@@ -19,7 +19,7 @@ Search is done with an alpha-beta prune in negamax form, sorting captures by MVV
 ## PerfT results
 Results for some positions, also checking that hash and fen are unafected after going through the full tree.
 ```
-  starting position
+ starting position
           20          20 T
          400         400 T
         8902        8902 T
@@ -57,7 +57,21 @@ unchanged fen            T
      2103487     2103487 T
 unchanged hash           T
 unchanged fen            T
- time:    3.64062500
- TT entrys/size        65308       65536
- TT skiped nodes     11446511
+ time:    2.98437500
+ TT entrys/size        65321       65536
+ TT skiped nodes     11449509
+```
+
+## Search results
+Starting position, quiescent nodes are not shown.
+```
+score dp       nodes  time  move       fhf/fh   ratio     TTw    TTr entry pv
+   50  1          20     0 b1c3        0       0 0.00       1      0     1 pv b1c3
+    0  2          74     0 b1c3       17      18 0.89      22      0    21 pv b1c3 b8c6
+   50  3         484     0 b1c3       55      56 0.96     101      0    79 pv b1c3 b8c6 g1f3
+    0  4        1394     0 b1c3      411     434 0.94     598     65   495 pv b1c3 b8c6 g1f3 g8f6
+   40  5        9491    15 b1c3     1182    1236 0.96    2235    325  1614 pv b1c3 b8c6 g1f3 g8f6 d2d4
+    0  6       28307    93 b1c3     8410    8958 0.94   12489   5277  9713 pv b1c3 b8c6 g1f3 d7d5 d2d4 g8f6
+   55  7      212791   421 g1f3    30626   32754 0.94   53603  15476 32719 pv g1f3 d7d5 e2e3 c8g4 d2d4 b8c6 b1c3
+    0  8     1026791  3234 b1c3   245999  264418 0.93  357834  98100 64846 pv b1c3 d7d5 d2d4 b8c6 c1f4 e7e6 g1f3 g8f6
 ```
