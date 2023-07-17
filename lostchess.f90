@@ -171,7 +171,7 @@ program lostchess
     integer,dimension(0:12,0:127)::heuristics
     real::t_ini
     real::t_cur
-    integer::nodes,nodes_quies,chekmates,stalemates,fh,fhf
+    integer::nodes,q_nodes,fh,fhf
   end type
   
   !search engine
@@ -218,7 +218,7 @@ program lostchess
           call restart_game()  
           call write_board()        
           do while(get_winner() == team_none)
-            call search_handler(8,3.)
+            call search_handler(7,3.)
             call make_move(srch%best_move)
             call write_board()
             if(get_winner() /= team_none) exit
@@ -323,7 +323,7 @@ program lostchess
   end function
 
   subroutine read_move()
-    type(type_move)::m=move_null
+    type(type_move)::m = move_null
     character(len=5)::alg
     call gen_moves(.true.)
     write(*,'(A5)',advance='no') 'move '
@@ -421,7 +421,7 @@ program lostchess
   end subroutine
 
   subroutine gen_pawn_moves(ini,gen_quiet)
-    integer::ini,move_direction,fin,promotion_pie,d_ind
+    integer::ini,move_direction,fin,d_ind
     integer::last_row,start_row
     integer::promo_q,promo_r,promo_b,promo_n
     integer,dimension(0:1)::capture_directions
@@ -736,12 +736,12 @@ program lostchess
 
   end subroutine
 
-  logical function is_attacked(sq,attacking_side)
-    ! logical::is_attacked
+  function is_attacked(sq,attacking_side)
+    logical::is_attacked
     integer::sq,attacking_side
     integer,dimension(0:7)::directions
     integer::dir,dir_ind,fin,piece
-    logical::is_slide,first_step
+    logical::first_step
    
     is_attacked = .FALSE.
     
@@ -820,9 +820,9 @@ program lostchess
     
   end function
 
-  logical function in_check(side)
+  function in_check(side)
     integer::side
-    ! logical::in_check
+    logical::in_check
     in_check = is_attacked(state%kings(side),ieor(1,side))
   end function
 
@@ -865,10 +865,10 @@ program lostchess
     write(*,*) '       a   b   c   d   e   f   g   h'    
   end subroutine
 
-  function raw2alg(sq) result(alg)
+  function sq2alg(sq) result(alg)
     character(len=2)::alg
     integer::sq
-    character(len=2),parameter,dimension(-1:127)::raw2alg_table = (/ '- ', & 
+    character(len=2),parameter,dimension(-1:127)::sq2alg_table = (/ '- ', & 
       &'a1','b1','c1','d1','e1','f1','g1','h1','ob','ob','ob','ob','ob','ob','ob','ob', &
       &'a2','b2','c2','d2','e2','f2','g2','h2','ob','ob','ob','ob','ob','ob','ob','ob', &
       &'a3','b3','c3','d3','e3','f3','g3','h3','ob','ob','ob','ob','ob','ob','ob','ob', &
@@ -877,14 +877,14 @@ program lostchess
       &'a6','b6','c6','d6','e6','f6','g6','h6','ob','ob','ob','ob','ob','ob','ob','ob', &
       &'a7','b7','c7','d7','e7','f7','g7','h7','ob','ob','ob','ob','ob','ob','ob','ob', &
       &'a8','b8','c8','d8','e8','f8','g8','h8','ob','ob','ob','ob','ob','ob','ob','ob' /)
-    alg = raw2alg_table(sq)
+    alg = sq2alg_table(sq)
   end function
 
-  function alg2raw(alg) result(sq)
+  function alg2sq(alg) result(sq)
     character(len=2)::alg
     integer::sq
     do sq=0,127
-      if(raw2alg(sq) == alg)exit
+      if(sq2alg(sq) == alg)exit
     end do
   end function
 
@@ -892,7 +892,7 @@ program lostchess
     type(type_move)::m
     character(len=5)::alg
     character(len=1),dimension(0:12):: fen_piece = (/' ','P','N','B','R','Q','K','p','n','b','r','q','k'/)
-    alg = raw2alg(m%ini)//raw2alg(m%fin)//fen_piece(m%promotion_pie)
+    alg = sq2alg(m%ini)//sq2alg(m%fin)//fen_piece(m%promotion_pie)
   end function
 
   function alg2move(alg) result(m)
@@ -901,8 +901,8 @@ program lostchess
     integer::ini,fin,m_ind,pie
     character(len=1),dimension(0:12):: fen_piece = (/' ','P','N','B','R','Q','K','p','n','b','r','q','k'/)
     
-    ini = alg2raw(alg(1:2))
-    fin = alg2raw(alg(3:4))
+    ini = alg2sq(alg(1:2))
+    fin = alg2sq(alg(3:4))
     do pie = 0,12
       if(alg(5:5) == fen_piece(pie))then
         exit
@@ -915,16 +915,6 @@ program lostchess
     end do
     m = move_null
   end function
-
-  subroutine write_moves()
-    integer::m_ind
-    type(type_move)::m
-    write(*,*)'List of moves:'
-    do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
-      m=moves_list(m_ind)
-      write(*,'(A4,I8,A1,I4,I4,L2,I4,L2,L2,L2,I4)')move2alg(m),m_ind,'|',m
-    end do
-  end subroutine
 
 !FEN
 
@@ -978,7 +968,7 @@ program lostchess
     end if
     fen = trim(fen)//' '//trim(fen_cp)
     !fen en passant
-    fen = trim(fen)//' '//raw2alg(state%ep)
+    fen = trim(fen)//' '//sq2alg(state%ep)
     !fen rule 50
     write(fen_rule50,*)state%rule50
     fen = trim(fen)//' '//adjustl(fen_rule50)
@@ -1079,7 +1069,7 @@ program lostchess
 
     !set fen ep
     do ep_ind = -1,127
-      if(fen_ep == raw2alg(ep_ind))then
+      if(fen_ep == sq2alg(ep_ind))then
         state%ep = ep_ind
         exit
       end if
@@ -1183,32 +1173,29 @@ program lostchess
     positions(5)%desc = 'perft position 5'
     positions(5)%fen = 'rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8'
     positions(5)%nodes = (/ 44,1486,62379,2103487,89941194,inf /)
-    
-    TT = 0
-    srch%ply = 0
-    TT_reads = 0
-    
-    call cpu_time(time_ini)
-    
-    do p_ind = 1,5
+
+    do p_ind = 1,2
       write(*,*) positions(p_ind)%desc
+      TT = 0
+      srch%ply = 0
+      TT_reads = 0
       call set_fen(positions(p_ind)%fen)
       hash_ini = state%hash
+      call cpu_time(time_ini)
       do depth = 1,6
-        if(positions(p_ind)%nodes(depth) < 12000000)then
+        if(positions(p_ind)%nodes(depth) < 200000000)then
           nodes = perft(depth)
           write(*,*) nodes,positions(p_ind)%nodes(depth),nodes==positions(p_ind)%nodes(depth)
         end if
       end do
-      write(*,'(A14,L12)')'unchanged hash',hash_ini == state%hash
-      write(*,'(A14,L12)')'unchanged fen ',positions(p_ind)%fen == get_fen()
+      call cpu_time(time_fin)
+      write(*,*)'time: ',time_fin-time_ini
+      ! write(*,'(A14,L12)')'unchanged hash',hash_ini == state%hash
+      ! write(*,'(A14,L12)')'unchanged fen ',positions(p_ind)%fen == get_fen()
+      write(*,*)'TT entrys/size ',TT_entries(),TT_size
+      write(*,*)'TT skiped nodes ',TT_reads
     end do
-    
-    call cpu_time(time_fin)
-    write(*,*)'time: ',time_fin-time_ini
-    write(*,*)'TT entrys/size ',TT_entries(),TT_size
-    write(*,*)'TT skiped nodes ',TT_reads
-    
+
   end subroutine
 
 !TRANSPOSITION TABLES
@@ -1358,13 +1345,12 @@ program lostchess
     
   end subroutine
 
-  function static_eval() result(white_score) !refactor pending
-    integer::white_score,sq,pie,col,opening,endgame,phase
+  function static_eval() result(score)
+    integer::score,sq,pie,col,opening,endgame,phase
     integer,dimension(0:12)::pie_phase = (/ 0, 0,1,1,2,4,0, 0,1,1,2,4,0 /)
     eval%ss_material = 0
     eval%ss_position_mg = 0
     eval%ss_position_eg = 0
-    
     phase = 32
     
     do sq = 0,127
@@ -1380,14 +1366,12 @@ program lostchess
       end if
     end do
     
-    phase =  (phase * 256 + 16) / 32
-    
     opening = eval%ss_position_mg(team_white) - eval%ss_position_mg(team_black)
     endgame = eval%ss_position_eg(team_white) - eval%ss_position_eg(team_black)
-    white_score = eval%ss_material(team_white) - eval%ss_material(team_black) &
-              & + (((opening * (256 - phase)) + (endgame * phase)) / 256 )
+    score = eval%ss_material(team_white) - eval%ss_material(team_black) &
+              & + (((opening * (32 - phase)) + (endgame * phase)) / 32 )
               
-    if(state%side == team_black) white_score = -white_score         
+    if(state%side == team_black) score = -score         
   end function
 
   function equal_m(m1,m2) result(eq)
@@ -1453,30 +1437,26 @@ program lostchess
     end do
   end function
 
-  subroutine search_handler(depth,time_max)!refactor pending
+  subroutine search_handler(depth,time_max)
     integer::depth,d_ind,pv_ind
     real::time_max,time_start
-    write(*,'(A:)',advance='no') '  score dp       nodes  time  move'
-    write(*,'(A:)',advance='no') '       fhf/fh   ratio     TTw    TTr entry'
-    write(*,'(A:)',advance='no') ' pv '
-    write(*,*)
+    OPEN(1,FILE='engine_log.txt',status="unknown", position="append", action="write")
     pv_table = move_null
     call cpu_time(time_start)
     TT = 0
     TT_reads = 0
     TT_saves = 0
+    srch%killers = move_null
+    srch%best_move = move_null
+    srch%score = -inf
     !iterate depths
     do d_ind = 1,depth
       call cpu_time(srch%t_ini)
       if(srch%t_ini - time_start < time_max)then
         !init
         srch%nodes = 0
-        srch%score = -inf
-        srch%best_move = move_null
         srch%ply = 0
-        srch%chekmates = 0
-        srch%stalemates = 0
-        srch%nodes_quies = 0
+        srch%q_nodes = 0
         srch%fh = 0
         srch%fhf = 0
         srch%heuristics = 0
@@ -1484,25 +1464,27 @@ program lostchess
         srch%score = alpha_beta(d_ind,-inf,inf)
         call cpu_time(srch%t_cur)
         !write results
-        write(*,'(I7,I3,I12,I6,A6)',advance='no') &
+        write(1,'(I24,I12,I12,I12,I12,I12,A6)',advance='no') &
+          &  state%hash, &
           &  srch%score, &
           &  d_ind, &
           &  srch%nodes, &
+          &  srch%q_nodes, &
           &  floor(1000*(srch%t_cur-srch%t_ini)), &
           &  move2alg(srch%best_move)
-        !tt and node sorting
-        write(*,'(I8,I8,f5.2,I8,I7,I6)',advance='no') &
+        !sort and tt
+        write(1,'(I12,I12,f5.2,I12,I12,I12)',advance='no') &
           &  srch%fhf, srch%fh, 1. * srch%fhf/(srch%fh+1), &
           &  TT_saves, TT_reads, TT_entries()
         !pv line
-        write(*,'(A:)',advance='no') ' pv '
         do pv_ind = 0,PV_length(0)-1
-          write(*,'(A5)',advance='no') move2alg(PV_table(0,pv_ind))
+          write(1,'(A6)',advance='no') move2alg(PV_table(0,pv_ind))
         end do
         !line break
-        write(*,*)
+        write(1,*)
       end if
     end do
+    CLOSE(1)
   end subroutine
 
   recursive function alpha_beta(depth,alpha_in,beta) result(score)
@@ -1613,10 +1595,8 @@ program lostchess
     !checkmate/stalemate
     if(legal_moves == 0)then
       if(in_check(state%side))then
-        srch%chekmates = srch%chekmates+1
         score = -mate_score+srch%ply
       else
-        srch%stalemates = srch%stalemates+1
         score = 0
       end if
       return
@@ -1624,17 +1604,15 @@ program lostchess
     
     !write TT
     call TT_save(depth,alpha,TT_flag)
-    
-    !this line looks unnecesary
-    ! score = alpha
+
   end function
 
   recursive function quies(alpha_in,beta) result(score)
     integer::alpha_in,alpha,beta,score
-    integer::m_ind,legal_moves,rule50_ind,next_ply
+    integer::m_ind,legal_moves
     type(type_move)::m
     alpha = alpha_in
-    srch%nodes_quies = srch%nodes_quies+1
+    srch%q_nodes = srch%q_nodes+1
         
     !static eval
     score = static_eval()
@@ -1683,148 +1661,93 @@ program lostchess
         alpha = score
       end if
     end do
-    
-    !this line looks unnecesary
-    ! score = alpha
+
   end function
 
 !TEST
 
   subroutine test_engine
-  type type_test
-    character(len=30)::desc
-    character(len=100)::fen
-    character(len=5)::bm
-    character(len=5)::pm
-  end type
-  type(type_test),dimension(1:24)::bratko_kopek
-  type(type_test),dimension(1:5)::finals
-  integer::t_ind,score
-  type(type_move)::m
-  real::t_ini,t_cur
+    type type_test
+      character(len=100)::fen
+      character(len=5)::bm
+    end type
+    type(type_test),dimension(1:24)::bratko_kopek
+    type(type_move)::m
+    integer::t_ind
+    real::t_ini,t_cur
   
+    bratko_kopek(1)%fen  = '1k1r4/pp1b1R2/3q2pp/4p3/2B5/4Q3/PPP2B2/2K5 b - - 0 1'  
+    bratko_kopek(1)%bm = 'd6d1'
+    bratko_kopek(2)%fen  = '3r1k2/4npp1/1ppr3p/p6P/P2PPPP1/1NR5/5K2/2R5 w - - 0 1'  
+    bratko_kopek(2)%bm = 'd4d5'
+    bratko_kopek(3)%fen  = '2q1rr1k/3bbnnp/p2p1pp1/2pPp3/PpP1P1P1/1P2BNNP/2BQ1PRK/7R b - - 0 1'  
+    bratko_kopek(3)%bm = 'f6f5'
+    bratko_kopek(4)%fen  = 'rnbqkb1r/p3pppp/1p6/2ppP3/3N4/2P5/PPP1QPPP/R1B1KB1R w KQkq - 0 1'  
+    bratko_kopek(4)%bm = 'e5e6'
+    bratko_kopek(5)%fen  = 'r1b2rk1/2q1b1pp/p2ppn2/1p6/3QP3/1BN1B3/PPP3PP/R4RK1 w - - 0 1'  
+    bratko_kopek(5)%bm = 'c3d5' !'a2a4'
+    bratko_kopek(6)%fen  = '2r3k1/pppR1pp1/4p3/4P1P1/5P2/1P4K1/P1P5/8 w - - 0 1'  
+    bratko_kopek(6)%bm = 'g5g6'
+    bratko_kopek(7)%fen  = '1nk1r1r1/pp2n1pp/4p3/q2pPp1N/b1pP1P2/B1P2R2/2P1B1PP/R2Q2K1 w - - 0 1'  
+    bratko_kopek(7)%bm = 'h5f6'
+    bratko_kopek(8)%fen  = '4b3/p3kp2/6p1/3pP2p/2pP1P2/4K1P1/P3N2P/8 w - - 0 1'  
+    bratko_kopek(8)%bm = 'f4f5'
+    bratko_kopek(9)%fen  = '2kr1bnr/pbpq4/2n1pp2/3p3p/3P1P1B/2N2N1Q/PPP3PP/2KR1B1R w - - 0 1'  
+    bratko_kopek(9)%bm = 'f4f5'
+    bratko_kopek(10)%fen = '3rr1k1/pp3pp1/1qn2np1/8/3p4/PP1R1P2/2P1NQPP/R1B3K1 b - - 0 1'  
+    bratko_kopek(10)%bm = 'c6e5'
+    bratko_kopek(11)%fen = '2r1nrk1/p2q1ppp/bp1p4/n1pPp3/P1P1P3/2PBB1N1/4QPPP/R4RK1 w - - 0 1'  
+    bratko_kopek(11)%bm = 'f2f4'
+    bratko_kopek(12)%fen = 'r3r1k1/ppqb1ppp/8/4p1NQ/8/2P5/PP3PPP/R3R1K1 b - - 0 1'  
+    bratko_kopek(12)%bm = 'd7f5'
+    bratko_kopek(13)%fen = 'r2q1rk1/4bppp/p2p4/2pP4/3pP3/3Q4/PP1B1PPP/R3R1K1 w - - 0 1'  
+    bratko_kopek(13)%bm = 'b2b4'
+    bratko_kopek(14)%fen = 'rnb2r1k/pp2p2p/2pp2p1/q2P1p2/8/1Pb2NP1/PB2PPBP/R2Q1RK1 w - - 0 1'  
+    bratko_kopek(14)%bm = 'd1e1' !'d1d2'
+    bratko_kopek(15)%fen = '2r3k1/1p2q1pp/2b1pr2/p1pp4/6Q1/1P1PP1R1/P1PN2PP/5RK1 w - - 0 1'  
+    bratko_kopek(15)%bm = 'g4g7'
+    bratko_kopek(16)%fen = 'r1bqkb1r/4npp1/p1p4p/1p1pP1B1/8/1B6/PPPN1PPP/R2Q1RK1 w kq - 0 1'  
+    bratko_kopek(16)%bm = 'd2e4'
+    bratko_kopek(17)%fen = 'r2q1rk1/1ppnbppp/p2p1nb1/3Pp3/2P1P1P1/2N2N1P/PPB1QP2/R1B2RK1 b - - 0 1'  
+    bratko_kopek(17)%bm = 'h7h5'
+    bratko_kopek(18)%fen = 'r1bq1rk1/pp2ppbp/2np2p1/2n5/P3PP2/N1P2N2/1PB3PP/R1B1QRK1 b - - 0 1'  
+    bratko_kopek(18)%bm = 'c5b3'
+    bratko_kopek(19)%fen = '3rr3/2pq2pk/p2p1pnp/8/2QBPP2/1P6/P5PP/4RRK1 b - - 0 1'  
+    bratko_kopek(19)%bm = 'e8e4'
+    bratko_kopek(20)%fen = 'r4k2/pb2bp1r/1p1qp2p/3pNp2/3P1P2/2N3P1/PPP1Q2P/2KRR3 w - - 0 1'  
+    bratko_kopek(20)%bm = 'g3g4'
+    bratko_kopek(21)%fen = '3rn2k/ppb2rpp/2ppqp2/5N2/2P1P3/1P5Q/PB3PPP/3RR1K1 w - - 0 1'  
+    bratko_kopek(21)%bm = 'f5h6'
+    bratko_kopek(22)%fen = '2r2rk1/1bqnbpp1/1p1ppn1p/pP6/N1P1P3/P2B1N1P/1B2QPP1/R2R2K1 b - - 0 1'  
+    bratko_kopek(22)%bm = 'b7e4'
+    bratko_kopek(23)%fen = 'r1bqk2r/pp2bppp/2p5/3pP3/P2Q1P2/2N1B3/1PP3PP/R4RK1 b kq - 0 1'  
+    bratko_kopek(23)%bm = 'f7f6'
+    bratko_kopek(24)%fen = 'r2qnrnk/p2b2b1/1p1p2pp/2pPpp2/1PP1P3/PRNBB3/3QNPPP/5RK1 w - - 0 1'  
+    bratko_kopek(24)%bm = 'f2f4'
   
-  finals(1)%desc = 'get oposition'
-  finals(1)%fen  = '8/8/3k4/8/1PK5/8/8/8 w - - 0 1'
-  finals(1)%bm   = 'c4b5'
+    !test the test
+    do t_ind = 1,24
+      call set_fen(bratko_kopek(t_ind)%fen)
+      call gen_moves(.true.)
+      m = alg2move(bratko_kopek(t_ind)%bm)
+      if(equal_m(m,move_null))then
+        write(*,*)'move is not in list ',t_ind
+      end if
+      call make_move(m)
+      if(in_check(ieor(1,state%side)))then
+        write(*,*)'move is illegal ',t_ind
+      end if
+    end do
   
-  finals(2)%desc = 'avoid oposition'
-  finals(2)%fen  = '8/4k3/4P3/4K3/8/8/8/8 b - - 0 1'
-  finals(2)%bm   = 'e7e8'
-  
-  finals(3)%desc = 'under promo knight'
-  finals(3)%fen  = '4q3/k2P4/8/K2B4/8/8/8/8 w - - 0 1'
-  finals(3)%bm   = 'd7e8N'
-  
-  finals(4)%desc = 'pass pawn'
-  finals(4)%fen  = '8/5ppp/8/5PPP/8/8/8/K1k5 w - - 0 1'
-  finals(4)%bm   = 'g5g6'
-  
-  finals(5)%desc = 'transposition table'
-  finals(5)%fen  = '6K1/4k1P1/8/8/8/7r/8/5R2 w - - 0 1'
-  finals(5)%bm   = 'f1e1'
-  
-  bratko_kopek(1)%fen  = '1k1r4/pp1b1R2/3q2pp/4p3/2B5/4Q3/PPP2B2/2K5 b - - 0 1'  
-  bratko_kopek(1)%bm = 'd6d1'
-  bratko_kopek(2)%fen  = '3r1k2/4npp1/1ppr3p/p6P/P2PPPP1/1NR5/5K2/2R5 w - - 0 1'  
-  bratko_kopek(2)%bm = 'd4d5'
-  bratko_kopek(3)%fen  = '2q1rr1k/3bbnnp/p2p1pp1/2pPp3/PpP1P1P1/1P2BNNP/2BQ1PRK/7R b - - 0 1'  
-  bratko_kopek(3)%bm = 'f6f5'
-  bratko_kopek(4)%fen  = 'rnbqkb1r/p3pppp/1p6/2ppP3/3N4/2P5/PPP1QPPP/R1B1KB1R w KQkq - 0 1'  
-  bratko_kopek(4)%bm = 'e5e6'
-  bratko_kopek(5)%fen  = 'r1b2rk1/2q1b1pp/p2ppn2/1p6/3QP3/1BN1B3/PPP3PP/R4RK1 w - - 0 1'  
-  bratko_kopek(5)%bm = 'c3d5' !'a2a4'
-  bratko_kopek(6)%fen  = '2r3k1/pppR1pp1/4p3/4P1P1/5P2/1P4K1/P1P5/8 w - - 0 1'  
-  bratko_kopek(6)%bm = 'g5g6'
-  bratko_kopek(7)%fen  = '1nk1r1r1/pp2n1pp/4p3/q2pPp1N/b1pP1P2/B1P2R2/2P1B1PP/R2Q2K1 w - - 0 1'  
-  bratko_kopek(7)%bm = 'h5f6'
-  bratko_kopek(8)%fen  = '4b3/p3kp2/6p1/3pP2p/2pP1P2/4K1P1/P3N2P/8 w - - 0 1'  
-  bratko_kopek(8)%bm = 'f4f5'
-  bratko_kopek(9)%fen  = '2kr1bnr/pbpq4/2n1pp2/3p3p/3P1P1B/2N2N1Q/PPP3PP/2KR1B1R w - - 0 1'  
-  bratko_kopek(9)%bm = 'f4f5'
-  bratko_kopek(10)%fen = '3rr1k1/pp3pp1/1qn2np1/8/3p4/PP1R1P2/2P1NQPP/R1B3K1 b - - 0 1'  
-  bratko_kopek(10)%bm = 'c6e5'
-  bratko_kopek(11)%fen = '2r1nrk1/p2q1ppp/bp1p4/n1pPp3/P1P1P3/2PBB1N1/4QPPP/R4RK1 w - - 0 1'  
-  bratko_kopek(11)%bm = 'f2f4'
-  bratko_kopek(12)%fen = 'r3r1k1/ppqb1ppp/8/4p1NQ/8/2P5/PP3PPP/R3R1K1 b - - 0 1'  
-  bratko_kopek(12)%bm = 'd7f5'
-  bratko_kopek(13)%fen = 'r2q1rk1/4bppp/p2p4/2pP4/3pP3/3Q4/PP1B1PPP/R3R1K1 w - - 0 1'  
-  bratko_kopek(13)%bm = 'b2b4'
-  bratko_kopek(14)%fen = 'rnb2r1k/pp2p2p/2pp2p1/q2P1p2/8/1Pb2NP1/PB2PPBP/R2Q1RK1 w - - 0 1'  
-  bratko_kopek(14)%bm = 'd1d2' !'d1e1'
-  bratko_kopek(15)%fen = '2r3k1/1p2q1pp/2b1pr2/p1pp4/6Q1/1P1PP1R1/P1PN2PP/5RK1 w - - 0 1'  
-  bratko_kopek(15)%bm = 'g4g7'
-  bratko_kopek(16)%fen = 'r1bqkb1r/4npp1/p1p4p/1p1pP1B1/8/1B6/PPPN1PPP/R2Q1RK1 w kq - 0 1'  
-  bratko_kopek(16)%bm = 'd2e4'
-  bratko_kopek(17)%fen = 'r2q1rk1/1ppnbppp/p2p1nb1/3Pp3/2P1P1P1/2N2N1P/PPB1QP2/R1B2RK1 b - - 0 1'  
-  bratko_kopek(17)%bm = 'h7h5'
-  bratko_kopek(18)%fen = 'r1bq1rk1/pp2ppbp/2np2p1/2n5/P3PP2/N1P2N2/1PB3PP/R1B1QRK1 b - - 0 1'  
-  bratko_kopek(18)%bm = 'c5b3'
-  bratko_kopek(19)%fen = '3rr3/2pq2pk/p2p1pnp/8/2QBPP2/1P6/P5PP/4RRK1 b - - 0 1'  
-  bratko_kopek(19)%bm = 'e8e4'
-  bratko_kopek(20)%fen = 'r4k2/pb2bp1r/1p1qp2p/3pNp2/3P1P2/2N3P1/PPP1Q2P/2KRR3 w - - 0 1'  
-  bratko_kopek(20)%bm = 'g3g4'
-  bratko_kopek(21)%fen = '3rn2k/ppb2rpp/2ppqp2/5N2/2P1P3/1P5Q/PB3PPP/3RR1K1 w - - 0 1'  
-  bratko_kopek(21)%bm = 'f5h6'
-  bratko_kopek(22)%fen = '2r2rk1/1bqnbpp1/1p1ppn1p/pP6/N1P1P3/P2B1N1P/1B2QPP1/R2R2K1 b - - 0 1'  
-  bratko_kopek(22)%bm = 'b7e4'
-  bratko_kopek(23)%fen = 'r1bqk2r/pp2bppp/2p5/3pP3/P2Q1P2/2N1B3/1PP3PP/R4RK1 b kq - 0 1'  
-  bratko_kopek(23)%bm = 'f7f6'
-  bratko_kopek(24)%fen = 'r2qnrnk/p2b2b1/1p1p2pp/2pPpp2/1PP1P3/PRNBB3/3QNPPP/5RK1 w - - 0 1'  
-  bratko_kopek(24)%bm = 'f2f4'
-  
-  !test the test
-  do t_ind = 1,5
-    call set_fen(finals(t_ind)%fen)
-    call gen_moves(.true.)
-    m = alg2move(finals(t_ind)%bm)
-    if(equal_m(m,move_null))then
-      write(*,*)'move is not in list ',t_ind
-    end if
-    call make_move(m)
-    if(in_check(ieor(1,state%side)))then
-      write(*,*)'move is illegal ',t_ind
-    end if
-  end do
-  
-  do t_ind = 1,24
-    call set_fen(bratko_kopek(t_ind)%fen)
-    call gen_moves(.true.)
-    m = alg2move(bratko_kopek(t_ind)%bm)
-    if(equal_m(m,move_null))then
-      write(*,*)'move is not in list ',t_ind
-    end if
-    call make_move(m)
-    if(in_check(ieor(1,state%side)))then
-      write(*,*)'move is illegal ',t_ind
-    end if
-  end do
-  
-  write(*,*)'bratko-kopek'
-  call cpu_time(t_ini)
-  do t_ind = 1,24
-    call set_fen(bratko_kopek(t_ind)%fen)
-    call search_handler(8,1.)
-    write(*,*)move2alg(srch%best_move),bratko_kopek(t_ind)%bm
-    if(move2alg(srch%best_move) == bratko_kopek(t_ind)%bm)then
-      score = score+1
-    end if
-  end do
-  call cpu_time(t_cur)
-  write(*,*)score,t_cur-t_ini
-  
-  ! write(*,*)'finals'
-  ! call cpu_time(t_ini)
-  ! do t_ind = 1,5
-    ! call set_fen(finals(t_ind)%fen)
-    ! call search_handler(10,1.)
-    ! write(*,*)move2alg(srch%best_move),finals(t_ind)%bm
-    ! if(move2alg(srch%best_move) == finals(t_ind)%bm)then
-      ! score = score+1
-    ! end if
-  ! end do
-  call cpu_time(t_cur)
-  write(*,*)score,t_cur-t_ini
+    write(*,*)'bratko-kopek test'
+    call cpu_time(t_ini)
+    do t_ind = 1,24
+      call set_fen(bratko_kopek(t_ind)%fen)
+      call search_handler(5,60.)
+      write(*,*)'found ',move2alg(srch%best_move),' spected ',bratko_kopek(t_ind)%bm
+    end do
+    call cpu_time(t_cur)
+    write(*,*)t_cur-t_ini
   
   end subroutine
 

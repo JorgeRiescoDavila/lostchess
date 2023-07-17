@@ -14,10 +14,10 @@ It uses 0x88 board representation, pseudo-legal move generator, 64-bit Zobrist h
 
 Static evaluation uses piece material and piece-square tables for start and end positions.
 
-Search is done with an alpha-beta prune in negamax form, sorting captures by MVV-LVA and sorting quiet moves by killers. It also has quiescience search on leaf nodes, time based iterative deepening, checkmate distance handler and returns the principal line.
+Search is done with an alpha-beta prune in negamax form, sorting by killers, mvv_lva and heuristics. It has quiescience search on leaf nodes, time based iterative deepening, checkmate distance handler and returns the principal line.
 
 ## PerfT results
-Results for some positions, also checking that hash and fen are unafected after going through the full tree.
+Perft results with transposition table info.
 ```
  starting position
           20          20 T
@@ -25,41 +25,20 @@ Results for some positions, also checking that hash and fen are unafected after 
         8902        8902 T
       197281      197281 T
      4865609     4865609 T
-unchanged hash           T
-unchanged fen            T
+   119060324   119060324 T
+ time:    17.2656250
+ TT entrys/size        65536       65536
+ TT skiped nodes     43550632
+ 
  kiwipete
           48          48 T
         2039        2039 T
        97862       97862 T
      4085603     4085603 T
-unchanged hash           T
-unchanged fen            T
- perft position 3
-          14          14 T
-         191         191 T
-        2812        2812 T
-       43238       43238 T
-      674624      674624 T
-    11030083    11030083 T
-unchanged hash           T
-unchanged fen            T
- perft position 4
-           6           6 T
-         264         264 T
-        9467        9467 T
-      422333      422333 T
-unchanged hash           T
-unchanged fen            T
- perft position 5
-          44          44 T
-        1486        1486 T
-       62379       62379 T
-     2103487     2103487 T
-unchanged hash           T
-unchanged fen            T
- time:    2.98437500
- TT entrys/size        65321       65536
- TT skiped nodes     11449509
+   193690690   193690690 T
+ time:    27.9375000
+ TT entrys/size        65536       65536
+ TT skiped nodes     60225931
 ```
 
 ## Search results
@@ -75,3 +54,11 @@ score dp       nodes  time  move       fhf/fh   ratio     TTw    TTr entry pv
    55  7      212791   421 g1f3    30626   32754 0.94   53603  15476 32719 pv g1f3 d7d5 e2e3 c8g4 d2d4 b8c6 b1c3
     0  8     1026791  3234 b1c3   245999  264418 0.93  357834  98100 64846 pv b1c3 d7d5 d2d4 b8c6 c1f4 e7e6 g1f3 g8f6
 ```
+
+## Roadmap
+* Use PV to score moves
+* Nullmove forward prune
+* Aspiration window
+* Improve time controller
+* NNUE
+* UCI
