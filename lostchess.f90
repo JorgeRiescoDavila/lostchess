@@ -190,9 +190,18 @@ program lostchess
   integer,parameter::node_is_pv = 0
   integer,parameter::node_is_alpha = 1
   integer,parameter::node_is_beta = 2
+  integer,parameter::TT_score_null = -inf-1 !this must below alpha to avoid interact with movenull forward
   integer,parameter::TT_size = 2**16
-  integer(8),dimension(0:TT_size-1,0:3)::TT
   integer::TT_reads,TT_saves
+
+  type type_TT
+    integer(8)::key
+    integer::depth
+    integer::score
+    integer::flag
+    type(type_move)::move
+  end type
+  type(type_TT),dimension(0:TT_size-1)::TT
 
 !INIT
 
@@ -826,6 +835,30 @@ program lostchess
     in_check = is_attacked(state%kings(side),ieor(1,side))
   end function
 
+  subroutine make_move_null()
+    hist(ply)%cp = state%cp
+    hist(ply)%ep = state%ep
+    hist(ply)%rule50 = state%rule50
+    hist(ply)%hash = state%hash
+    hist(ply)%move = move_null
+    call inc_hash(hash_table%ep(state%ep))
+    state%ep = ob
+    call inc_hash(hash_table%ep(state%ep))
+    call inc_hash(hash_table%side)
+    state%side = ieor(1,state%side)
+    ply = ply + 1
+    moves_list_ind(ply+1) = moves_list_ind(ply)
+  end subroutine
+  
+  subroutine undo_last_move_null()
+    ply = ply-1
+    state%cp = hist(ply)%cp
+    state%ep = hist(ply)%ep
+    state%rule50 = hist(ply)%rule50
+    state%hash = hist(ply)%hash
+    state%side = ieor(1,state%side)
+  end subroutine
+
 !INPUT/OUTPUT UTILITIES
 
   subroutine mirror(board)
@@ -1112,8 +1145,8 @@ program lostchess
     
     !read TT
     row = mod(state%hash,TT_size)
-    if(TT(row,0) ==  state%hash .and. TT(row,1) == depth)then
-      nodes = TT(row,2)
+    if(TT(row)%key ==  state%hash .and. TT(row)%depth == depth)then
+      nodes = TT(row)%score
       TT_reads = TT_reads+nodes
       return
     end if
@@ -1136,9 +1169,9 @@ program lostchess
     !write TT
     row = mod(state%hash,TT_size)
     if(srch%ply >= 3)then !there are no transposition for lower plys
-      TT(row,0) = state%hash
-      TT(row,1) = depth
-      TT(row,2) = nodes
+      TT(row)%key = state%hash
+      TT(row)%depth = depth
+      TT(row)%score = nodes
     end if
       
   end function
@@ -1174,27 +1207,33 @@ program lostchess
     positions(5)%fen = 'rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8'
     positions(5)%nodes = (/ 44,1486,62379,2103487,89941194,inf /)
 
-    do p_ind = 1,2
+      call cpu_time(time_ini)
+    do p_ind = 1,5
       write(*,*) positions(p_ind)%desc
-      TT = 0
+      TT(0:TT_size-1)%key = 0
+      TT(0:TT_size-1)%depth = 0
+      TT(0:TT_size-1)%score = 0
+      TT(0:TT_size-1)%flag = 0
+      TT(0:TT_size-1)%move = move_null
       srch%ply = 0
       TT_reads = 0
       call set_fen(positions(p_ind)%fen)
       hash_ini = state%hash
-      call cpu_time(time_ini)
+
       do depth = 1,6
-        if(positions(p_ind)%nodes(depth) < 200000000)then
+        if(positions(p_ind)%nodes(depth) < 12000000)then
           nodes = perft(depth)
           write(*,*) nodes,positions(p_ind)%nodes(depth),nodes==positions(p_ind)%nodes(depth)
         end if
       end do
-      call cpu_time(time_fin)
-      write(*,*)'time: ',time_fin-time_ini
+
       ! write(*,'(A14,L12)')'unchanged hash',hash_ini == state%hash
       ! write(*,'(A14,L12)')'unchanged fen ',positions(p_ind)%fen == get_fen()
       write(*,*)'TT entrys/size ',TT_entries(),TT_size
       write(*,*)'TT skiped nodes ',TT_reads
     end do
+          call cpu_time(time_fin)
+      write(*,*)'time: ',time_fin-time_ini
 
   end subroutine
 
@@ -1204,53 +1243,59 @@ program lostchess
   integer::cnt,ind
   cnt = 0
   do ind = 0,TT_size-1
-    if(TT(ind,0) /= 0)then
+    if(TT(ind)%key /= 0)then
       cnt = cnt+1
     end if
   end do
   end function
 
-  function TT_read(depth,alpha,beta) result(score)
+  subroutine TT_read(depth,alpha,beta,score,move)
     integer::row,score,alpha,beta,depth
+    type(type_move)::move
     row = mod(state%hash,TT_size)
-    if(TT(row,0) ==  state%hash .and. TT(row,1) >= depth)then
-      if(TT(row,3) == node_is_pv)then
+    if(TT(row)%key ==  state%hash .and. TT(row)%depth >= depth)then
+      if(TT(row)%flag == node_is_pv)then
         TT_reads = TT_reads+1
-        score = TT(row,2)
+        score = TT(row)%score
         return
       end if
-      if(TT(row,3) == node_is_alpha .and. TT(row,2) <= alpha)then
+      if(TT(row)%flag == node_is_alpha .and. TT(row)%score <= alpha)then
         TT_reads = TT_reads+1
         score = alpha
         return
       end if
-      if(TT(row,3) == node_is_beta .and. TT(row,2) >= beta)then
+      if(TT(row)%flag == node_is_beta .and. TT(row)%score >= beta)then
         TT_reads = TT_reads+1
         score = beta
         return
       end if
+      move = TT(row)%move
     end if
-    score = inf+1
-  end function
+    score = TT_score_null
+  end subroutine
 
-  subroutine TT_save(depth,score,TT_flag)
-    integer::row,depth,score,TT_flag
-    TT_saves = TT_saves+1
+  subroutine TT_save(depth,score,flag,move)
+    integer::row,depth,score,flag
+    type(type_move)::move
     
     row = mod(state%hash,TT_size)
-    if(depth >= TT(row,1))then
-      TT(row,0) = state%hash
-      TT(row,1) = depth
-      TT(row,2) = score
-      TT(row,3) = TT_flag
+    if(depth >= TT(row)%depth)then
+      TT_saves = TT_saves+1
+      TT(row)%key = state%hash
+      TT(row)%depth = depth
+      TT(row)%score = score
+      TT(row)%flag = flag
+      TT(row)%move = move
     end if
     !why? becuase if for some reason i reach very high depth, that node will last forever
     !even tought the position wont appear again on the game, so i want overwrite it
-    if(TT(row,0) /= state%hash .and. depth >= TT(row,1)-2)then
-      TT(row,0) = state%hash
-      TT(row,1) = depth
-      TT(row,2) = score
-      TT(row,3) = TT_flag
+    if(TT(row)%key /= state%hash .and. depth >= TT(row)%depth-2)then
+      TT_saves = TT_saves+1
+      TT(row)%key = state%hash
+      TT(row)%depth = depth
+      TT(row)%score = score
+      TT(row)%flag = flag
+      TT(row)%move = move
     end if
   end subroutine
 
@@ -1258,7 +1303,7 @@ program lostchess
 
   subroutine init_piesq_table()
     integer::p_ind
-    eval%piece_value = (/ 0,100,310,320,500,950,100000,100,310,320,500,950,100000 /)
+    eval%piece_value = (/ 0,100,310,320,500,950,1000,100,310,320,500,950,1000 /)
   
     eval%piesq_mg(wp,0:127) = (/ & 
       &  0,  0,  0,  0,  0,  0,  0,  0, 0,0,0,0,0,0,0,0, &
@@ -1390,29 +1435,18 @@ program lostchess
     end if
   end function
 
-  subroutine score_moves()
+  !0 < heuristics < ~1000 < 2000 < mvvlva < 20000 < 100000 < tt < pv < killers
+  subroutine score_moves(TT_move)
     integer::m_ind,pie
-    type(type_move)::m
-    integer,dimension(0:12)::mvv,lva
-    
-    mvv = (/ 0,1000,2000,3000,4000,5000,6000,1000,2000,3000,4000,5000,6000 /)
-    lva = (/ 0,5,4,3,2,1,0,5,4,3,2,1,0/)
-    
+    type(type_move)::m,TT_move 
+    integer,parameter,dimension(0:12)::mvv = (/ 0,100,310,320,500,950,1000,100,310,320,500,950,1000 /)*20
+    integer,parameter,dimension(0:12)::lva = -(/ 0,100,310,320,500,950,1000,100,310,320,500,950,1000 /)
+
     do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1
       m = moves_list(m_ind)
       pie = board(m%ini)
-      
       !heuristic score
       moves_score(m_ind) = srch%heuristics(pie,m%fin)
-      
-      !killers
-      if(equal_m(m,srch%killers(1,srch%ply)))then
-         moves_score(m_ind) = 25000
-      end if
-      if(equal_m(m,srch%killers(0,srch%ply)))then
-         moves_score(m_ind) = 30000
-      end if
-      
       !captures 
       if(m%captured_pie /= empty)then
         moves_score(m_ind) = moves_score(m_ind) + mvv(m%captured_pie) + lva(pie)
@@ -1422,6 +1456,21 @@ program lostchess
       end if
       if(m%is_enpassant)then
         moves_score(m_ind) = moves_score(m_ind) + mvv(wp) + lva(wp)
+      end if
+      !tt move, probably the same as pv
+      if(equal_m(m,TT_move))then
+        moves_score(m_ind) = 101000
+      end if
+      !pv move
+      if(equal_m(m,pv_table(0,srch%ply)))then
+        moves_score(m_ind) = 102000
+      end if
+      !killers
+      if(equal_m(m,srch%killers(1,srch%ply)))then
+         moves_score(m_ind) = 103000
+      end if
+      if(equal_m(m,srch%killers(0,srch%ply)))then
+         moves_score(m_ind) = 104000
       end if
     end do
   end subroutine
@@ -1438,17 +1487,24 @@ program lostchess
   end function
 
   subroutine search_handler(depth,time_max)
-    integer::depth,d_ind,pv_ind
+    integer::depth,d_ind,pv_ind,alpha,beta,asp_window
     real::time_max,time_start
     OPEN(1,FILE='engine_log.txt',status="unknown", position="append", action="write")
     pv_table = move_null
     call cpu_time(time_start)
-    TT = 0
+    TT(0:TT_size-1)%key = 0
+    TT(0:TT_size-1)%depth = 0
+    TT(0:TT_size-1)%score = 0
+    TT(0:TT_size-1)%flag = 0
+    TT(0:TT_size-1)%move = move_null
     TT_reads = 0
     TT_saves = 0
     srch%killers = move_null
     srch%best_move = move_null
     srch%score = -inf
+    alpha = -inf
+    beta = inf
+    asp_window = 100
     !iterate depths
     do d_ind = 1,depth
       call cpu_time(srch%t_ini)
@@ -1461,7 +1517,14 @@ program lostchess
         srch%fhf = 0
         srch%heuristics = 0
         !alpha beta
-        srch%score = alpha_beta(d_ind,-inf,inf)
+        srch%score = alpha_beta(d_ind,alpha,beta)
+        if(srch%score <= alpha .or. srch%score >= beta )then
+          alpha = -inf
+          beta = inf
+          srch%score = alpha_beta(d_ind,alpha,beta)
+        end if
+        alpha = srch%score - asp_window
+        beta = srch%score + asp_window
         call cpu_time(srch%t_cur)
         !write results
         write(1,'(I24,I12,I12,I12,I12,I12,A6)',advance='no') &
@@ -1487,15 +1550,23 @@ program lostchess
     CLOSE(1)
   end subroutine
 
+  ! -inf < alpha < PV < beta < inf
   recursive function alpha_beta(depth,alpha_in,beta) result(score)
     integer::depth,alpha_in,alpha,beta,score
     integer::m_ind,legal_moves,rule50_ind,next_ply,TT_flag
-    type(type_move)::m
+    type(type_move)::m,TT_move
+    logical::is_in_check,is_pv_node
     alpha = alpha_in
 
+    !for PV search
+    is_pv_node = .false.
+
+    !init move to store in TT
+    TT_move = move_null
+
     !read TT
-    score = TT_read(depth,alpha,beta)
-    if(score <= inf)then
+    call TT_read(depth,alpha,beta,score,TT_move)
+    if(ply /= 0 .and. score /= TT_score_null)then
       return
     end if
     
@@ -1532,11 +1603,29 @@ program lostchess
       return
     end if
     
+    !lets store this expensive function
+    is_in_check = in_check(state%side)
+    
+    !in check extension
+    if(is_in_check)then
+      depth = depth+1
+    end if
+    
+    !null move forward pruning
+    if(.not. is_in_check .and. depth >= 3)then
+      call make_move_null()
+        srch%ply = srch%ply+1
+        score = -alpha_beta(depth-1-2,-beta,-beta+1)
+        srch%ply = srch%ply-1
+      call undo_last_move_null()
+    end if
+    if(score >= beta) return
+    
     !generate moves
     call gen_moves(.true.)
     
     !set moves scores
-    call score_moves()
+    call score_moves(TT_move)
     
     !reset legal move counter
     legal_moves = 0
@@ -1552,7 +1641,16 @@ program lostchess
           cycle
         end if
         legal_moves = legal_moves+1
-        score = -alpha_beta(depth-1,-beta,-alpha)
+        !pv search
+        if(is_pv_node)then
+          score = -alpha_beta(depth-1,-alpha-1,-alpha)
+          !it was not the pv,lets go normal search
+          if(score > alpha .and. score < beta)then
+            score = -alpha_beta(depth-1,-beta,-alpha)
+          end if
+        else
+          score = -alpha_beta(depth-1,-beta,-alpha)
+        end if
       call undo_last_move()
       srch%ply = srch%ply-1
       
@@ -1562,7 +1660,7 @@ program lostchess
         srch%fh = srch%fh+1
         if(legal_moves == 1) srch%fhf = srch%fhf+1
         !write TT
-        call TT_save(depth,beta,node_is_beta)
+        call TT_save(depth,beta,node_is_beta,TT_move)
         !update killers
         srch%killers(1,srch%ply) = srch%killers(0,srch%ply)
         srch%killers(0,srch%ply) = m
@@ -1573,8 +1671,10 @@ program lostchess
       
       !better move found
       if(score > alpha)then
+        is_pv_node = .true.
         !change TT flag 
         TT_flag = node_is_pv
+        TT_move = m
         !update PV table
         PV_table(srch%ply,srch%ply) = m
         do next_ply = srch%ply+1,PV_length(srch%ply+1)-1
@@ -1594,7 +1694,7 @@ program lostchess
     
     !checkmate/stalemate
     if(legal_moves == 0)then
-      if(in_check(state%side))then
+      if(is_in_check)then
         score = -mate_score+srch%ply
       else
         score = 0
@@ -1603,7 +1703,7 @@ program lostchess
     end if
     
     !write TT
-    call TT_save(depth,alpha,TT_flag)
+    call TT_save(depth,alpha,TT_flag,TT_move)
 
   end function
 
@@ -1634,7 +1734,7 @@ program lostchess
     call gen_moves(.false.)
         
     !set moves scores
-    call score_moves()
+    call score_moves(move_null)
     
     !go next depth
     do m_ind = moves_list_ind(ply),moves_list_ind(ply+1)-1

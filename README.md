@@ -10,11 +10,26 @@ start lostchess.exe
 Or download the lostchess.exe for 64bits Windows
 
 ## Technical details
-It uses 0x88 board representation, pseudo-legal move generator, 64-bit Zobrist hash, perft with transposition table and supports FEN.
+### Generation
+* Board representation 0x88
+* Hash function Zobrist 64-bit
+* FEN support
+* PerfT with Transposition Table
 
-Static evaluation uses piece material and piece-square tables for start and end positions.
+### Evaluation
+* Material
+* Piece-square tables
 
-Search is done with an alpha-beta prune in negamax form, sorting by killers, mvv_lva and heuristics. It has quiescience search on leaf nodes, time based iterative deepening, checkmate distance handler and returns the principal line.
+### Search
+* Alpha-beta prune in negamax form
+* Iterative deepening with aspiration window
+* Move sorting by Killers, PV, MVV-LVA and Heuristics
+* Quiescience search
+* Checkmate distance handler
+* Transposition Table
+* Principal Variation Table
+* Principal Variation Search
+* Null move forward pruning
 
 ## PerfT results
 Perft results with transposition table info.
@@ -42,23 +57,28 @@ Perft results with transposition table info.
 ```
 
 ## Search results
-Starting position, quiescent nodes are not shown.
+Search results for starting position and kiwipete
 ```
-score dp       nodes  time  move       fhf/fh   ratio     TTw    TTr entry pv
-   50  1          20     0 b1c3        0       0 0.00       1      0     1 pv b1c3
-    0  2          74     0 b1c3       17      18 0.89      22      0    21 pv b1c3 b8c6
-   50  3         484     0 b1c3       55      56 0.96     101      0    79 pv b1c3 b8c6 g1f3
-    0  4        1394     0 b1c3      411     434 0.94     598     65   495 pv b1c3 b8c6 g1f3 g8f6
-   40  5        9491    15 b1c3     1182    1236 0.96    2235    325  1614 pv b1c3 b8c6 g1f3 g8f6 d2d4
-    0  6       28307    93 b1c3     8410    8958 0.94   12489   5277  9713 pv b1c3 b8c6 g1f3 d7d5 d2d4 g8f6
-   55  7      212791   421 g1f3    30626   32754 0.94   53603  15476 32719 pv g1f3 d7d5 e2e3 c8g4 d2d4 b8c6 b1c3
-    0  8     1026791  3234 b1c3   245999  264418 0.93  357834  98100 64846 pv b1c3 d7d5 d2d4 b8c6 c1f4 e7e6 g1f3 g8f6
+score    depth       nodes      qnodes        time move          fhf          fh ratio    TTwrites     TTreads   TTentries pv
+50           1          21          21           0 b1c3            0           0  0.00           1           0           1 b1c3 
+ 0           2          42          46           0 b1c3           19          19  0.95          22           0          21 b1c3  b8c6 
+50           3         467         467           0 b1c3           37          38  0.95          82           0          60 b1c3  b8c6  g1f3 
+-5           4         689         816           0 b1c3          199         207  0.96         319          18         261 b1c3  b8c6  g1f3  g8f6 
+40           5        6016        6341          15 b1c3          420         433  0.97         999          90         719 b1c3  b8c6  g1f3  g8f6  d2d4 
+-5           6       61741       74132         125 d2d4         5993        6404  0.94        9870        1262        7336 d2d4  d7d5  g1f3  g8f6  b1c3  b8c6 
+55           7       90138      114660         187 g1f3        13057       13985  0.93       27094        4421       17733 g1f3  d7d5  e2e3  c8g4  b1c3  g8f6  d2d4 
+ 0           8      289372      399797         640 g1f3        34946       38604  0.91       75647       10770       41515 g1f3  d7d5  b1c3  b8c6  d2d4  g8f6  c1e3  e7e6 
+
+70           1          48        1389          15 e2a6            0           0  0.00           1           0           1 e2a6 
+70           2          86        1574           0 e2a6           44          47  0.92          50           0          49 e2a6  b4c3 
+50           3        2243        4302           0 e2a6           75          85  0.87         185           0         135 e2a6  b4c3  d2c3 
+50           4        3475       20322          31 e2a6         1727        1768  0.98        2051         522        1838 e2a6  b4c3  d2c3  h3g2 
+50           5       47776       88136         140 e2a6         3035        3140  0.97        6676        1205        4756 e2a6  b4c3  d2c3  h3g2  f3g2 
+50           6       46551      412421         593 e2a6        10488       10978  0.96       18972        2387       14407 e2a6  b4c3  d2c3  h3g2  f3g2  e6d5 
+30           7      422375      894281        1281 e2a6        30531       32182  0.95       63143        7758       37438 e2a6  b4c3  d2c3  e6d5  e5g4  h3g2  f3g2 
 ```
 
 ## Roadmap
-* Use PV to score moves
-* Nullmove forward prune
-* Aspiration window
 * Improve time controller
 * NNUE
 * UCI
